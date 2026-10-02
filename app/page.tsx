@@ -1,69 +1,36 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+import { redirect } from 'next/navigation';
+import { getMerchant } from '@/lib/auth/current';
+import SignIn from '@/components/SignIn';
 
-export default function Home() {
+export default async function Home() {
+  if (await getMerchant()) redirect('/dashboard');
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>
-            To get started, edit the{" "}
-            <code className={styles.code}>page.tsx</code> file.
-          </h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="container narrow">
+      <section className="hero">
+        <h1>Invoices that reconcile themselves.</h1>
+        <p className="muted">
+          Send a link. Your client pays in USDC or EURC on Arc. The invoice ID travels with the payment on-chain through
+          Arc&apos;s Memo contract, so MemoPay marks it paid in about a second. No matching bank lines to invoices by hand.
+        </p>
+      </section>
+      <div className="card">
+        <SignIn />
+      </div>
+      <div className="steps">
+        <div className="card">
+          <h2>1. Create</h2>
+          <p className="muted small">Add line items in USDC or EURC. Get a share link and QR code.</p>
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <div className="card">
+          <h2>2. Get paid</h2>
+          <p className="muted small">Your client pays with one transaction. The fee is about $0.001, paid in USDC.</p>
         </div>
-      </main>
+        <div className="card">
+          <h2>3. Reconciled</h2>
+          <p className="muted small">The server checks the Memo event on Arc and marks the invoice paid. Export CSV for your books.</p>
+        </div>
+      </div>
     </div>
   );
 }

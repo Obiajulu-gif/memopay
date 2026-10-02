@@ -1,0 +1,43 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { connectWallet, walletError } from '@/lib/arc/browser';
+import { signInMessage } from '@/lib/auth/message';
+
+export default function SignIn() {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function signIn() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { wallet, address } = await connectWallet();
+      const { nonce } = await fetch('/api/auth/nonce').then(r => r.json());
+      const signature = await wallet.signMessage({ account: address, message: signInMessage(address, nonce) });
+      const res = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address, nonce, signature }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? 'Sign-in failed');
+      router.push('/dashboard');
+      router.refresh();
+    } catch (e) {
+      setError(walletError(e));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack">
+      <button className="btn btn-primary btn-lg" onClick={signIn} disabled={busy}>
+        {busy ? 'Check your wallet…' : 'Connect wallet & sign in'}
+      </button>
+      {error && <div className="alert alert-error">{error}</div>}
+      <p className="muted small">Signing a message proves you own the address. It costs nothing and sends no transaction.</p>
+    </div>
+  );
+}
