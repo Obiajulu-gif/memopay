@@ -1,0 +1,73 @@
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { getInvoice } from '@/lib/db/invoices';
+import { formatAmount, formatDate, shortAddr } from '@/lib/format';
+import PayButton from './PayButton';
+
+export const metadata = { title: 'Pay invoice — MemoPay' };
+
+export default async function PayPage({ params }: PageProps<'/pay/[id]'>) {
+  const { id } = await params;
+  const inv = await getInvoice(id).catch(() => null);
+  if (!inv) notFound();
+
+  return (
+    <div className="container narrow">
+      <div className="card">
+        <div className="spread">
+          <div>
+            <div className="muted small">Invoice {inv.number}</div>
+            <h1 style={{ marginBottom: 0 }}>{formatAmount(inv.amount, inv.currency)}</h1>
+          </div>
+          <span className={`badge badge-${inv.status}`}>{inv.status}</span>
+        </div>
+        <dl className="kv" style={{ marginTop: 16 }}>
+          <dt>Billed to</dt><dd>{inv.client_name}</dd>
+          <dt>Pay to</dt><dd className="mono" title={inv.merchant}>{shortAddr(inv.merchant)}</dd>
+          <dt>Due</dt><dd>{formatDate(inv.due_date)}</dd>
+          <dt>Network</dt><dd>Arc {process.env.NEXT_PUBLIC_ARC_NETWORK === 'mainnet' ? '' : 'Testnet'}</dd>
+        </dl>
+        <div className="table-wrap">
+          <table style={{ marginTop: 16 }}>
+            <thead><tr><th>Item</th><th className="num">Qty</th><th className="num">Total</th></tr></thead>
+            <tbody>
+              {inv.line_items.map((l, i) => (
+                <tr key={i}>
+                  <td>{l.description}</td>
+                  <td className="num">{l.quantity}</td>
+                  <td className="num">{formatAmount(l.unit_amount * BigInt(l.quantity), inv.currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card">
+        {inv.status === 'paid' && (
+          <div className="stack">
+            <div className="alert alert-ok">This invoice has been paid.</div>
+            <Link className="btn" href={`/r/${inv.id}`}>View receipt</Link>
+          </div>
+        )}
+        {inv.status === 'void' && <div className="alert alert-info">This invoice was cancelled by the sender. Don&apos;t pay it.</div>}
+        {inv.status === 'open' && (
+          <PayButton
+            invoice={{
+              id: inv.id,
+              number: inv.number,
+              content_hash: inv.content_hash,
+              merchant: inv.merchant,
+              amount: inv.amount.toString(),
+              currency: inv.currency,
+            }}
+          />
+        )}
+      </div>
+      <p className="muted small">
+        Paid through Arc&apos;s Memo contract: the invoice ID is attached to your transfer on-chain, so the sender&apos;s books
+        update automatically.
+      </p>
+    </div>
+  );
+}
