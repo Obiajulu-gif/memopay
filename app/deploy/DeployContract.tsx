@@ -33,7 +33,7 @@ export default function DeployContract({ configured }: { configured: string | nu
         maxFeePerGas: est > 20_000_000_000n ? est : 20_000_000_000n, // Arc floor: 20 gwei
         maxPriorityFeePerGas: 1n,
       });
-      const receipt = await pc.waitForTransactionReceipt({ hash: tx });
+      const receipt = await pc.waitForTransactionReceipt({ hash: tx, timeout: 60_000 });
       if (receipt.status !== 'success' || !receipt.contractAddress) throw new Error('Deployment reverted');
       const deployed = receipt.contractAddress;
       // Read the constructor arguments back from the chain to prove the deployment is wired to Arc's tokens.

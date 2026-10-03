@@ -76,8 +76,10 @@ contract MemoPayInvoices {
     error TransferFailed();
     error NotPayer();
     error AuthorizationNotForInvoice();
+    error BadTokenConfig();
 
     constructor(address usdc_, address eurc_) {
+        if (usdc_ == address(0) || eurc_ == address(0) || usdc_ == eurc_) revert BadTokenConfig();
         usdc = usdc_;
         eurc = eurc_;
     }

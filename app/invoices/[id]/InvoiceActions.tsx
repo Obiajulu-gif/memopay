@@ -61,7 +61,7 @@ export default function InvoiceActions({ id, status, payUrl, settlement, memoId,
           maxFeePerGas: est > 20_000_000_000n ? est : 20_000_000_000n, // Arc floor: 20 gwei
           maxPriorityFeePerGas: 1n,
         });
-        const receipt = await pc.waitForTransactionReceipt({ hash: tx });
+        const receipt = await pc.waitForTransactionReceipt({ hash: tx, timeout: 60_000 });
         if (receipt.status !== 'success') throw new Error('The cancel transaction reverted. The invoice is still open.');
       } catch (e) {
         setBusy(false);

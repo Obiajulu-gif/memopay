@@ -146,7 +146,9 @@ export default function PayButton({ invoice }: { invoice: PayInvoice }) {
         maxPriorityFeePerGas: 1n,
       });
       setState({ step: 'confirming' });
-      const receipt = await pc.waitForTransactionReceipt({ hash: tx });
+      // Arc gives no receipt for some blocklist reverts; after a minute, let the server decide from the chain.
+      const receipt = await pc.waitForTransactionReceipt({ hash: tx, timeout: 60_000 }).catch(() => null);
+      if (!receipt) return claim(tx);
       if (receipt.status !== 'success') {
         setError('The transaction reverted. Nothing was paid. You can try again.');
         setState({ step: 'idle' });

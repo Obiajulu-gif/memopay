@@ -274,6 +274,17 @@ contract MemoPayInvoicesTest is Test {
         invoices.cancel(ID);
     }
 
+    // ---- deployment ----
+
+    function test_RevertWhen_DeployedWithZeroOrDuplicateTokens() public {
+        vm.expectRevert(MemoPayInvoices.BadTokenConfig.selector);
+        new MemoPayInvoices(address(0), address(eurc));
+        vm.expectRevert(MemoPayInvoices.BadTokenConfig.selector);
+        new MemoPayInvoices(address(usdc), address(0));
+        vm.expectRevert(MemoPayInvoices.BadTokenConfig.selector);
+        new MemoPayInvoices(address(usdc), address(usdc));
+    }
+
     // ---- hashing matches the off-chain signer (viem) ----
 
     function test_HashMatchesViemVector() public {
