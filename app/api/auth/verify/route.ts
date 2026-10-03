@@ -13,8 +13,15 @@ export async function POST(req: Request) {
 
   const host = req.headers.get('host') ?? '';
   const signer = await checkSignIn(parsed.data.message, parsed.data.signature, host);
-  if (!signer) return Response.json({ error: 'Signature does not match this site' }, { status: 401 });
-  if (!(await consumeNonce(signer.nonce))) return Response.json({ error: 'Sign-in expired, try again' }, { status: 401 });
+  if (!signer) {
+    // Logged so a domain mismatch (e.g. host header vs message domain) is visible in runtime logs.
+    console.warn('sign-in rejected: signature or domain', { host, messageDomain: parsed.data.message.split(' ')[0] });
+    return Response.json({ error: 'Signature does not match this site' }, { status: 401 });
+  }
+  if (!(await consumeNonce(signer.nonce))) {
+    console.warn('sign-in rejected: nonce missing or expired');
+    return Response.json({ error: 'Sign-in expired, try again' }, { status: 401 });
+  }
 
   await upsertMerchant(signer.address);
   (await cookies()).set(SESSION_COOKIE, await signSession(signer.address), {

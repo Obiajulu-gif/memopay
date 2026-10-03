@@ -4,6 +4,7 @@ import { Bricolage_Grotesque, JetBrains_Mono } from 'next/font/google';
 import { getMerchant } from '@/lib/auth/current';
 import { shortAddr } from '@/lib/format';
 import LogoutButton from '@/components/LogoutButton';
+import { NavConnect } from '@/components/SignIn';
 import './globals.css';
 
 const bricolage = Bricolage_Grotesque({ variable: '--font-bricolage', subsets: ['latin'] });
@@ -43,12 +44,14 @@ export default async function RootLayout({ children }: LayoutProps<'/'>) {
                 <span className="dot" aria-hidden="true" />
                 {mainnet ? 'Arc mainnet' : 'Arc testnet'}
               </span>
-              {merchant && (
+              {merchant ? (
                 <>
                   <Link href="/dashboard">Invoices</Link>
                   <span className="mono muted addr">{shortAddr(merchant)}</span>
                   <LogoutButton />
                 </>
+              ) : (
+                <NavConnect />
               )}
             </nav>
           </div>
