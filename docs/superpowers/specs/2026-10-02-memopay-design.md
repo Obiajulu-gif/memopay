@@ -75,6 +75,7 @@ invoices (
   id              uuid primary key,
   number          text not null,           -- per-merchant sequence, e.g. INV-0001
   merchant        text not null references merchants(address),
+  network         text not null check (network in ('mainnet','testnet')),  -- added after review: a deployment only settles its own network's invoices
   client_name     text not null,
   currency        text not null check (currency in ('USDC','EURC')),
   amount          bigint not null check (amount > 0),   -- 6-decimal units
@@ -92,7 +93,7 @@ invoices (
 )
 
 payments (
-  tx_hash     text primary key,
+  tx_hash     text not null,              -- primary key (tx_hash, invoice_id): one tx may pay several invoices
   invoice_id  uuid not null references invoices(id),
   payer       text not null,
   matched     boolean not null,
@@ -181,7 +182,7 @@ Ceiling: an invoice that has been open for weeks needs many chunks. v1 accepts t
 ## 9. Authentication
 
 1. `GET /api/auth/nonce` creates a 16-byte random nonce stored with a 5-minute expiry.
-2. The wallet signs `MemoPay sign-in · <address> · <nonce>` with `personal_sign`.
+2. The wallet signs an EIP-4361 (Sign-In with Ethereum) message bound to the site domain, chain ID and nonce (changed after review from a plain string, so wallets flag phishing domains).
 3. `POST /api/auth/verify {address, nonce, signature}` checks the nonce exists and has not expired, deletes it, verifies the signature with viem `verifyMessage`, upserts the merchant, and sets an httpOnly, Secure, SameSite=Lax cookie holding a `jose` HS256 JWT `{sub: address}` valid for 7 days.
 4. Merchant routes read the session and filter all queries by `merchant = session.address`.
 
