@@ -16,6 +16,8 @@ export type Invoice = {
   due_date: string | null;
   memo_id: string;
   content_hash: string;
+  merchant_sig: string | null; // EIP-712 signature over the invoice terms (null on invoices made before settlement)
+  settlement: string | null; // MemoPayInvoices contract the merchant signed for
   created_block: bigint;
   status: InvoiceStatus;
   paid_tx: string | null;
@@ -31,7 +33,7 @@ type Row = Omit<Invoice, 'line_items' | 'amount' | 'created_block'> & {
 };
 
 const COLS = `id, number, merchant, network, client_name, currency, amount, line_items, to_char(due_date, 'YYYY-MM-DD') as due_date,
-  memo_id, content_hash, created_block, status, paid_tx, paid_by, paid_at, created_at`;
+  memo_id, content_hash, merchant_sig, settlement, created_block, status, paid_tx, paid_by, paid_at, created_at`;
 
 function toInvoice(r: Row): Invoice {
   return {
@@ -48,9 +50,9 @@ export async function insertInvoice(inv: NewInvoice): Promise<Invoice> {
   const sql = db();
   const line_items = inv.line_items.map(li => ({ ...li, unit_amount: li.unit_amount.toString() }));
   const [row] = await sql<Row[]>`
-    insert into invoices (id, number, merchant, network, client_name, currency, amount, line_items, due_date, memo_id, content_hash, created_block)
+    insert into invoices (id, number, merchant, network, client_name, currency, amount, line_items, due_date, memo_id, content_hash, merchant_sig, settlement, created_block)
     values (${inv.id}, ${inv.number}, ${inv.merchant}, ${inv.network}, ${inv.client_name}, ${inv.currency}, ${inv.amount.toString()},
-            ${sql.json(line_items)}, ${inv.due_date}, ${inv.memo_id}, ${inv.content_hash}, ${inv.created_block.toString()})
+            ${sql.json(line_items)}, ${inv.due_date}, ${inv.memo_id}, ${inv.content_hash}, ${inv.merchant_sig}, ${inv.settlement}, ${inv.created_block.toString()})
     returning ${sql.unsafe(COLS)}`;
   return toInvoice(row);
 }

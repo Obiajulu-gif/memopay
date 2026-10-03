@@ -71,3 +71,9 @@ export function explorerTx(network: ArcNetwork, hash: string): string {
 export function explorerAddress(network: ArcNetwork, address: string): string {
   return `${arcConfig(network).explorer}/address/${address}`;
 }
+
+/// Deployed MemoPayInvoices address for this deployment's network (set per Vercel environment).
+export function settlementAddress(): Hex | null {
+  const a = process.env.NEXT_PUBLIC_SETTLEMENT_CONTRACT;
+  return a && /^0x[0-9a-fA-F]{40}$/.test(a) ? (a.toLowerCase() as Hex) : null;
+}

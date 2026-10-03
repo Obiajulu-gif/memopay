@@ -1,6 +1,6 @@
 import { getMerchant, unauthorized } from '@/lib/auth/current';
-import { arcConfig, currentNetwork, publicClient, type Hex } from '@/lib/arc/config';
-import { findMemoTxHashes } from '@/lib/arc/scan';
+import { currentNetwork, publicClient, type Hex } from '@/lib/arc/config';
+import { findPaidTxHashes } from '@/lib/arc/scan';
 import { getOwnedInvoice } from '@/lib/db/invoices';
 import { checkTx } from '@/lib/payments/check';
 
@@ -12,11 +12,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!invoice) return Response.json({ error: 'Invoice not found' }, { status: 404 });
 
   if (invoice.network !== currentNetwork()) return Response.json({ error: `This invoice is on Arc ${invoice.network}` }, { status: 409 });
+  if (!invoice.settlement) return Response.json({ found: 0, status: invoice.status });
   const client = publicClient();
   const chunk = BigInt(process.env.ARC_LOGS_CHUNK || '10000');
   try {
     const latest = await client.getBlockNumber();
-    const hashes = await findMemoTxHashes(client, arcConfig(currentNetwork()).memo, invoice.memo_id as Hex, invoice.created_block, latest, chunk);
+    const hashes = await findPaidTxHashes(client, invoice.settlement as Hex, invoice.memo_id as Hex, invoice.created_block, latest, chunk);
     for (const h of hashes) await checkTx(invoice, h, client);
     const fresh = await getOwnedInvoice(id, merchant);
     return Response.json({ found: hashes.length, status: fresh?.status ?? invoice.status });

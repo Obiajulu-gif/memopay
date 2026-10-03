@@ -18,6 +18,8 @@ create table if not exists invoices (
   due_date       date,
   memo_id        text not null unique,       -- 0x bytes32
   content_hash   text not null,              -- 0x bytes32
+  merchant_sig   text,                       -- EIP-712 signature over the invoice terms
+  settlement     text,                       -- MemoPayInvoices contract address the merchant signed for
   created_block  bigint not null,
   status         text not null default 'open' check (status in ('open','paid','void')),
   paid_tx        text,
@@ -52,3 +54,7 @@ alter table merchants enable row level security;
 alter table invoices enable row level security;
 alter table payments enable row level security;
 alter table auth_nonces enable row level security;
+
+-- Migration for databases created before the settlement contract (safe to re-run).
+alter table invoices add column if not exists merchant_sig text;
+alter table invoices add column if not exists settlement text;

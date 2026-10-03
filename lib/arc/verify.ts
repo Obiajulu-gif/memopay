@@ -1,40 +1,40 @@
-import { decodeEventLog, keccak256, type TransactionReceipt } from 'viem';
-import { memoAbi } from './abi';
-import { transferCallData } from './encode';
+import { decodeEventLog, type TransactionReceipt } from 'viem';
+import { settlementAbi } from './settlement';
 import type { Hex } from './config';
 
-export type Expected = { memoId: Hex; token: Hex; merchant: Hex; amount: bigint; memoContract: Hex };
+export type Expected = { settlement: Hex; id: Hex; merchant: Hex; token: Hex; amount: bigint; contentHash: Hex };
 
-export type FailReason = 'tx_failed' | 'no_memo' | 'wrong_token' | 'wrong_amount_or_recipient';
+export type FailReason = 'tx_failed' | 'no_payment' | 'terms_mismatch';
 
 export type VerifyResult =
   | { ok: true; payer: Hex; block: bigint }
   | { ok: false; reason: FailReason };
 
-// Reasons that describe a real payment attempt against this invoice, so they are worth storing.
-export const STORABLE_REASONS = ['wrong_token', 'wrong_amount_or_recipient'] as const;
+// Reasons that describe a real payment against this invoice, so they are worth storing.
+export const STORABLE_REASONS = ['terms_mismatch'] as const;
 
 const lc = (s: string) => s.toLowerCase();
 
-export function verifyPayment(receipt: TransactionReceipt, expected: Expected): VerifyResult {
+/// The settlement contract only emits InvoicePaid after it has checked the merchant's signature and
+/// moved exactly the signed amount to the merchant, so a matching event is proof of payment.
+export function verifySettlement(receipt: TransactionReceipt, expected: Expected): VerifyResult {
   if (receipt.status !== 'success') return { ok: false, reason: 'tx_failed' };
 
-  const memo = receipt.logs
-    .filter(l => lc(l.address) === lc(expected.memoContract))
+  const paid = receipt.logs
+    .filter(l => lc(l.address) === lc(expected.settlement))
     .map(l => {
       try {
-        return decodeEventLog({ abi: memoAbi, eventName: 'Memo', topics: l.topics, data: l.data });
+        return decodeEventLog({ abi: settlementAbi, eventName: 'InvoicePaid', topics: l.topics, data: l.data });
       } catch {
         return null;
       }
     })
-    .find(e => e && lc(e.args.memoId) === lc(expected.memoId));
+    .find(e => e && lc(e.args.id) === lc(expected.id) && lc(e.args.merchant) === lc(expected.merchant));
 
-  if (!memo) return { ok: false, reason: 'no_memo' };
-  if (lc(memo.args.target) !== lc(expected.token)) return { ok: false, reason: 'wrong_token' };
-
-  const wantHash = keccak256(transferCallData(lc(expected.merchant) as Hex, expected.amount));
-  if (lc(memo.args.callDataHash) !== wantHash) return { ok: false, reason: 'wrong_amount_or_recipient' };
-
-  return { ok: true, payer: lc(memo.args.sender) as Hex, block: receipt.blockNumber };
+  if (!paid) return { ok: false, reason: 'no_payment' };
+  const a = paid.args;
+  if (lc(a.token) !== lc(expected.token) || a.amount !== expected.amount || lc(a.contentHash) !== lc(expected.contentHash)) {
+    return { ok: false, reason: 'terms_mismatch' };
+  }
+  return { ok: true, payer: lc(a.payer) as Hex, block: receipt.blockNumber };
 }

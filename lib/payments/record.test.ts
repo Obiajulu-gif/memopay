@@ -22,16 +22,12 @@ describe('decideRecord', () => {
     expect(decideRecord('void', null, TX, ok)).toEqual({ markPaid: false, payment: { matched: false, reason: 'invoice_void' } });
   });
 
-  it('stores a wrong-token attempt as a mismatch', () => {
-    expect(decideRecord('open', null, TX, { ok: false, reason: 'wrong_token' })).toEqual({ markPaid: false, payment: { matched: false, reason: 'wrong_token' } });
-  });
-
-  it('stores a wrong-amount attempt as a mismatch', () => {
-    expect(decideRecord('open', null, TX, { ok: false, reason: 'wrong_amount_or_recipient' })).toEqual({ markPaid: false, payment: { matched: false, reason: 'wrong_amount_or_recipient' } });
+  it('stores an on-chain payment whose terms differ from the stored invoice as a mismatch', () => {
+    expect(decideRecord('open', null, TX, { ok: false, reason: 'terms_mismatch' })).toEqual({ markPaid: false, payment: { matched: false, reason: 'terms_mismatch' } });
   });
 
   it('ignores transactions that are not payments for this invoice', () => {
-    expect(decideRecord('open', null, TX, { ok: false, reason: 'no_memo' })).toEqual({ markPaid: false, payment: null });
+    expect(decideRecord('open', null, TX, { ok: false, reason: 'no_payment' })).toEqual({ markPaid: false, payment: null });
     expect(decideRecord('open', null, TX, { ok: false, reason: 'tx_failed' })).toEqual({ markPaid: false, payment: null });
   });
 });

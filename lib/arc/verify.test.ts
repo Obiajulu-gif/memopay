@@ -1,73 +1,58 @@
 import { describe, expect, it } from 'vitest';
-import { getAddress, keccak256 } from 'viem';
-import { verifyPayment, type Expected } from './verify';
-import { memoLog, makeReceipt } from './fixtures';
-import { memoIdFor, transferCallData } from './encode';
+import { getAddress, keccak256, toBytes } from 'viem';
+import { verifySettlement, type Expected } from './verify';
+import { makeReceipt, paidLog } from './fixtures';
+import { memoIdFor } from './encode';
 import { arcConfig } from './config';
 
 const cfg = arcConfig('testnet');
+const SETTLEMENT = '0x5555555555555555555555555555555555555555' as const;
 const M = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd' as const;
-const OTHER = '0x2222222222222222222222222222222222222222' as const;
 const PAYER = '0x9999999999999999999999999999999999999999' as const;
-const X = memoIdFor('inv-1');
+const ID = memoIdFor('inv-1');
+const CONTENT = keccak256(toBytes('content'));
 
-const expected: Expected = { memoId: X, token: cfg.tokens.USDC, merchant: M, amount: 50_000n, memoContract: cfg.memo };
+const expected: Expected = { settlement: SETTLEMENT, id: ID, merchant: M, token: cfg.tokens.USDC, amount: 50_000n, contentHash: CONTENT };
 
-function log(over: Partial<Parameters<typeof memoLog>[0]> = {}) {
-  return memoLog({
-    emitter: cfg.memo,
-    sender: PAYER,
-    target: cfg.tokens.USDC,
-    callDataHash: keccak256(transferCallData(M, 50_000n)),
-    memoId: X,
-    ...over,
-  });
+function log(over: Partial<Parameters<typeof paidLog>[0]> = {}) {
+  return paidLog({ emitter: SETTLEMENT, id: ID, merchant: M, payer: PAYER, token: cfg.tokens.USDC, amount: 50_000n, contentHash: CONTENT, ...over });
 }
 
-describe('verifyPayment', () => {
-  it('accepts a matching Memo event', () => {
-    expect(verifyPayment(makeReceipt({ logs: [log()], block: 7n }), expected)).toEqual({ ok: true, payer: PAYER, block: 7n });
+describe('verifySettlement', () => {
+  it('accepts a matching InvoicePaid event', () => {
+    expect(verifySettlement(makeReceipt({ logs: [log()], block: 7n }), expected)).toEqual({ ok: true, payer: PAYER, block: 7n });
   });
 
   it('rejects a reverted transaction', () => {
-    expect(verifyPayment(makeReceipt({ status: 'reverted', logs: [log()] }), expected)).toEqual({ ok: false, reason: 'tx_failed' });
+    expect(verifySettlement(makeReceipt({ status: 'reverted', logs: [log()] }), expected)).toEqual({ ok: false, reason: 'tx_failed' });
   });
 
-  it('reports no_memo when there are no logs', () => {
-    expect(verifyPayment(makeReceipt({ logs: [] }), expected)).toEqual({ ok: false, reason: 'no_memo' });
+  it('reports no_payment when the settlement contract emitted nothing for this invoice', () => {
+    expect(verifySettlement(makeReceipt({ logs: [] }), expected)).toEqual({ ok: false, reason: 'no_payment' });
+    expect(verifySettlement(makeReceipt({ logs: [log({ id: memoIdFor('inv-2') })] }), expected)).toEqual({ ok: false, reason: 'no_payment' });
   });
 
-  it('ignores Memo-shaped logs from another emitter', () => {
-    expect(verifyPayment(makeReceipt({ logs: [log({ emitter: OTHER })] }), expected)).toEqual({ ok: false, reason: 'no_memo' });
+  it('ignores InvoicePaid events from any other contract', () => {
+    expect(verifySettlement(makeReceipt({ logs: [log({ emitter: '0x6666666666666666666666666666666666666666' })] }), expected)).toEqual({ ok: false, reason: 'no_payment' });
   });
 
-  it('ignores Memo logs for another invoice', () => {
-    expect(verifyPayment(makeReceipt({ logs: [log({ memoId: memoIdFor('inv-2') })] }), expected)).toEqual({ ok: false, reason: 'no_memo' });
+  it('ignores a payment for the same id under another merchant', () => {
+    expect(verifySettlement(makeReceipt({ logs: [log({ merchant: '0x2222222222222222222222222222222222222222' })] }), expected)).toEqual({ ok: false, reason: 'no_payment' });
   });
 
-  it('rejects the wrong token', () => {
-    expect(verifyPayment(makeReceipt({ logs: [log({ target: cfg.tokens.EURC })] }), expected)).toEqual({ ok: false, reason: 'wrong_token' });
-  });
-
-  it('rejects a different amount', () => {
-    const r = makeReceipt({ logs: [log({ callDataHash: keccak256(transferCallData(M, 50_001n)) })] });
-    expect(verifyPayment(r, expected)).toEqual({ ok: false, reason: 'wrong_amount_or_recipient' });
-  });
-
-  it('rejects a different recipient', () => {
-    const r = makeReceipt({ logs: [log({ callDataHash: keccak256(transferCallData(OTHER, 50_000n)) })] });
-    expect(verifyPayment(r, expected)).toEqual({ ok: false, reason: 'wrong_amount_or_recipient' });
+  it('flags terms that differ from the stored invoice', () => {
+    expect(verifySettlement(makeReceipt({ logs: [log({ amount: 1n })] }), expected)).toEqual({ ok: false, reason: 'terms_mismatch' });
+    expect(verifySettlement(makeReceipt({ logs: [log({ token: cfg.tokens.EURC })] }), expected)).toEqual({ ok: false, reason: 'terms_mismatch' });
+    expect(verifySettlement(makeReceipt({ logs: [log({ contentHash: keccak256(toBytes('other')) })] }), expected)).toEqual({ ok: false, reason: 'terms_mismatch' });
   });
 
   it('matches regardless of address case', () => {
-    const checksummed = { ...expected, merchant: getAddress(M), token: cfg.tokens.USDC.toLowerCase() as `0x${string}`, memoContract: cfg.memo.toLowerCase() as `0x${string}` };
-    expect(verifyPayment(makeReceipt({ logs: [log()] }), checksummed).ok).toBe(true);
-    const lowerLog = log({ emitter: cfg.memo.toLowerCase() as `0x${string}` });
-    expect(verifyPayment(makeReceipt({ logs: [lowerLog] }), expected).ok).toBe(true);
+    const mixed = { ...expected, merchant: getAddress(M), settlement: SETTLEMENT.toLowerCase() as `0x${string}` };
+    expect(verifySettlement(makeReceipt({ logs: [log()] }), mixed).ok).toBe(true);
   });
 
-  it('skips unrelated logs from the Memo contract', () => {
-    const junk = { address: cfg.memo, topics: ['0x' + '00'.repeat(32)], data: '0x' } as never;
-    expect(verifyPayment(makeReceipt({ logs: [junk, log()] }), expected).ok).toBe(true);
+  it('skips unrelated logs from the settlement contract', () => {
+    const junk = { address: SETTLEMENT, topics: ['0x' + '00'.repeat(32)], data: '0x' } as never;
+    expect(verifySettlement(makeReceipt({ logs: [junk, log()] }), expected).ok).toBe(true);
   });
 });

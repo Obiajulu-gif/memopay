@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PublicClient } from 'viem';
-import { chunkRanges, findMemoTxHashes } from './scan';
+import { chunkRanges, findPaidTxHashes } from './scan';
 
 describe('chunkRanges', () => {
   it('returns one range when from equals to', () => {
@@ -31,7 +31,7 @@ describe('chunkRanges', () => {
   });
 });
 
-describe('findMemoTxHashes', () => {
+describe('findPaidTxHashes', () => {
   it('queries once per chunk and dedupes tx hashes', async () => {
     const calls: Array<[bigint, bigint]> = [];
     const client = {
@@ -40,7 +40,7 @@ describe('findMemoTxHashes', () => {
         return [{ transactionHash: '0xaa' }];
       },
     } as unknown as PublicClient;
-    const hashes = await findMemoTxHashes(client, '0x5294E9927c3306DcBaDb03fe70b92e01cCede505', '0x01', 0n, 25n, 10n);
+    const hashes = await findPaidTxHashes(client, '0x5555555555555555555555555555555555555555', '0x01', 0n, 25n, 10n);
     expect(calls).toEqual([[0n, 9n], [10n, 19n], [20n, 25n]]);
     expect(hashes).toEqual(['0xaa']);
   });

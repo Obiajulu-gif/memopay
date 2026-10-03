@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { keccak256, type PublicClient } from 'viem';
-import { makeReceipt, memoLog } from '@/lib/arc/fixtures';
-import { memoIdFor, transferCallData } from '@/lib/arc/encode';
+import { keccak256, toBytes, type PublicClient } from 'viem';
+import { makeReceipt, paidLog } from '@/lib/arc/fixtures';
+import { memoIdFor } from '@/lib/arc/encode';
 import { arcConfig } from '@/lib/arc/config';
 import type { Invoice } from '@/lib/db/invoices';
 
@@ -12,10 +12,12 @@ const { checkTx } = await import('./check');
 const cfg = arcConfig('testnet');
 const M = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
 const FROM = '0x9999999999999999999999999999999999999999';
-const invoice = { id: 'inv-1', merchant: M, currency: 'USDC', amount: 50_000n, memo_id: memoIdFor('inv-1'), status: 'open', paid_tx: null, network: 'testnet' } as unknown as Invoice;
+const SETTLEMENT = '0x5555555555555555555555555555555555555555';
+const CONTENT = keccak256(toBytes('content'));
+const invoice = { id: 'inv-1', merchant: M, currency: 'USDC', amount: 50_000n, memo_id: memoIdFor('inv-1'), content_hash: CONTENT, settlement: SETTLEMENT, status: 'open', paid_tx: null, network: 'testnet' } as unknown as Invoice;
 
 const good = makeReceipt({
-  logs: [memoLog({ emitter: cfg.memo, sender: FROM, target: cfg.tokens.USDC, callDataHash: keccak256(transferCallData(M, 50_000n)), memoId: invoice.memo_id as `0x${string}` })],
+  logs: [paidLog({ emitter: SETTLEMENT, id: invoice.memo_id as `0x${string}`, merchant: M, payer: FROM, token: cfg.tokens.USDC, amount: 50_000n, contentHash: CONTENT })],
 });
 const clientWith = (getTransactionReceipt: () => Promise<unknown>) => ({ getTransactionReceipt }) as unknown as PublicClient;
 
@@ -31,9 +33,16 @@ describe('checkTx', () => {
     expect(recordVerification).toHaveBeenCalledOnce();
   });
 
-  it('ignores a transaction without this invoice memo', async () => {
+  it('ignores a transaction that did not pay this invoice', async () => {
     const res = await checkTx(invoice, '0xaa', clientWith(async () => ({ ...makeReceipt({ logs: [] }), from: FROM })));
-    expect(res).toEqual({ status: 'ignored', reason: 'no_memo' });
+    expect(res).toEqual({ status: 'ignored', reason: 'no_payment' });
+  });
+
+  it('refuses invoices created before the settlement contract without touching the chain', async () => {
+    const getTransactionReceipt = vi.fn(async () => ({ ...good, from: FROM }));
+    const res = await checkTx({ ...invoice, settlement: null } as Invoice, '0xaa', { getTransactionReceipt } as unknown as PublicClient);
+    expect(res).toEqual({ status: 'ignored', reason: 'legacy_invoice' });
+    expect(getTransactionReceipt).not.toHaveBeenCalled();
   });
 
   it('refuses invoices from another Arc network without touching the chain', async () => {
