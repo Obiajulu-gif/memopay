@@ -1,0 +1,13 @@
+{
+  "name": "memopay-contracts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "hardhat build",
+    "test": "hardhat test solidity"
+  },
+  "devDependencies": {
+    "forge-std": "github:foundry-rs/forge-std#v1.9.7",
+    "hardhat": "^3.18.1"
+  }
+}
