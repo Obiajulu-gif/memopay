@@ -7,7 +7,10 @@ export default async function NewInvoicePage() {
   return (
     <div className="container narrow">
       <h1>New invoice</h1>
-      <p className="muted">Invoices can&apos;t be edited after creation, because their hash is attached to the payment on-chain.</p>
+      <p className="muted">
+        You&apos;ll sign the invoice terms in your wallet. It&apos;s free, and the settlement contract only pays out against
+        that signature. Invoices can&apos;t be edited afterwards.
+      </p>
       <NewInvoiceForm />
     </div>
   );

@@ -3,8 +3,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
+import { createPublicClient, custom } from 'viem';
+import { clientNetwork, connectWallet, walletError } from '@/lib/arc/browser';
+import { arcChain, type Hex } from '@/lib/arc/config';
+import { settlementAbi } from '@/lib/arc/settlement';
 
-export default function InvoiceActions({ id, status, payUrl }: { id: string; status: string; payUrl: string }) {
+type Props = { id: string; status: string; payUrl: string; settlement: string | null; memoId: string };
+
+export default function InvoiceActions({ id, status, payUrl, settlement, memoId }: Props) {
   const router = useRouter();
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error' | 'info'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -36,6 +42,30 @@ export default function InvoiceActions({ id, status, payUrl }: { id: string; sta
   async function voidIt() {
     if (!confirm('Void this invoice? The pay link will stop accepting payments.')) return;
     setBusy(true);
+    if (settlement) {
+      // Cancel on Arc first so the contract itself refuses any payment (about $0.001 in USDC).
+      try {
+        const network = clientNetwork();
+        const { wallet, address } = await connectWallet(network);
+        const pc = createPublicClient({ chain: arcChain(network), transport: custom(window.ethereum!) });
+        const { maxFeePerGas: est } = await pc.estimateFeesPerGas();
+        const tx = await wallet.writeContract({
+          address: settlement as Hex,
+          abi: settlementAbi,
+          functionName: 'cancel',
+          args: [memoId as Hex],
+          account: address,
+          chain: arcChain(network),
+          maxFeePerGas: est > 20_000_000_000n ? est : 20_000_000_000n, // Arc floor: 20 gwei
+          maxPriorityFeePerGas: 1n,
+        });
+        await pc.waitForTransactionReceipt({ hash: tx });
+      } catch (e) {
+        setBusy(false);
+        setMsg({ kind: 'error', text: walletError(e) });
+        return;
+      }
+    }
     const res = await fetch(`/api/invoices/${id}/void`, { method: 'POST' });
     setBusy(false);
     if (res.ok) router.refresh();

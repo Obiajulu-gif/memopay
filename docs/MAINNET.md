@@ -36,23 +36,37 @@ Arc mainnet contracts:
 - EURC: `0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1`
 - Memo: `0x5294E9927c3306DcBaDb03fe70b92e01cCede505`
 
-## 3. Run the mainnet smoke test
+## 3. Deploy the settlement contract (once)
+
+1. **Update the database.** In the Neon SQL Editor, run the two migration lines at the bottom of [`db/schema.sql`](../db/schema.sql):
+   ```sql
+   alter table invoices add column if not exists merchant_sig text;
+   alter table invoices add column if not exists settlement text;
+   ```
+2. **Deploy.** Open https://memopay.vercel.app/deploy with any funded wallet on Arc mainnet and select **Deploy MemoPayInvoices**. Confirm in MetaMask; it costs a few cents of USDC. The page shows the new contract address and reads back the USDC and EURC addresses it was built with.
+3. **Point the app at it.** In Vercel, open memopay, then Settings, then Environment Variables. Add `NEXT_PUBLIC_SETTLEMENT_CONTRACT` with that address, for **Production**. It's a public address, not a secret. Then redeploy.
+4. **Check.** Revisit `/deploy`: it should say "This site already uses 0x…".
+
+Invoices created before this step have no merchant signature, so their pay pages ask the client for a new link.
+
+## 4. Run the mainnet smoke test
 
 1. Open https://memopay.vercel.app with the merchant wallet and select **Connect wallet**. Approve the sign-in message.
-2. Create an invoice for **0.05 USDC**. Copy the pay link.
+2. Create an invoice for **0.05 USDC**. MetaMask asks you to sign the invoice terms (free). Copy the pay link.
 3. Open the pay link with the payer wallet. Prefer a separate browser profile or a private window, so the merchant session doesn't get in the way.
-4. Select **Connect wallet to pay**, then **Pay 0.05 USDC**, and confirm in MetaMask. The page should show **Paid** within a few seconds.
+4. Select **Connect wallet to pay**, then **Pay 0.05 USDC**. MetaMask asks twice: first a free signature approving exactly 0.05 USDC for this invoice, then the payment transaction. The page should show **Paid** within a few seconds.
 5. Repeat with a **0.05 EURC** invoice.
 6. Back in the merchant session, check each invoice:
    - it shows **paid**;
    - "On-chain activity" lists the payment as **Matched**;
    - the receipt page opens;
    - **Export CSV** contains both invoices.
-7. Open each transaction on https://explorer.arc.io and confirm its logs show a `Memo` event whose `memoId` matches the one on the invoice page.
+7. Open each transaction on https://explorer.arc.io and confirm its logs show an `InvoicePaid` event from your contract and a `Memo` event, both carrying the memo ID shown on the invoice page.
+8. Optional: void a third invoice to test the on-chain cancel. MetaMask asks for a small transaction, then the invoice shows **void** and its pay link refuses payment.
 
-## 4. Record the proof
+## 5. Record the proof
 
-Paste the two explorer links into the "Mainnet proof" section of `README.md`, replacing `_pending_`. Then commit and push:
+Paste the contract address and the two payment explorer links into the "Mainnet proof" section of `README.md`, replacing `_pending_`. Then commit and push:
 
 ```bash
 git add README.md
@@ -60,7 +74,7 @@ git commit -m "docs: add mainnet payment proof"
 git push origin main
 ```
 
-## 5. Submit to Arc Microgrants
+## 6. Submit to Arc Microgrants
 
 On https://dorahacks.io/hackathon/arc-microgrants select **Submit Build**:
 
@@ -68,7 +82,9 @@ On https://dorahacks.io/hackathon/arc-microgrants select **Submit Build**:
 - **Public repo:** https://github.com/Obiajulu-gif/memopay
 - **Description:** "Invoice links paid in USDC or EURC on Arc. Each payment carries the invoice ID on-chain through Arc's Memo contract, so MemoPay verifies it and marks the invoice paid automatically."
 - **What it uses Arc for:**
+  - its own settlement contract, MemoPayInvoices, which enforces each invoice on-chain;
   - the Memo contract, for the on-chain invoice reference;
+  - USDC and EURC's EIP-3009 authorizations;
   - USDC as gas;
   - EURC;
   - sub-second deterministic finality.

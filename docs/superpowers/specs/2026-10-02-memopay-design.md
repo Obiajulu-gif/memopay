@@ -230,3 +230,16 @@ Errors:
 - Nigerian NRS e-invoice reference (IRN) in `memoData`.
 - Refunds.
 - Smart-contract-wallet payers.
+
+## 14. Addendum (2026-10-03): on-chain settlement contract
+
+Approved by the user as option A. Supersedes §6–§8 for invoices created after the contract is configured.
+
+- **Contract:** `contracts/contracts/MemoPayInvoices.sol`, immutable USDC and EURC addresses, no owner.
+- **Merchant terms:** EIP-712 `Invoice(bytes32 id, address merchant, address token, uint256 amount, bytes32 contentHash)` in domain `{name: "MemoPay", version: "1", chainId, verifyingContract}`, signed at creation (free). Stored as `invoices.merchant_sig` with the contract address in `invoices.settlement`.
+- **Payment:** the payer signs EIP-3009 `ReceiveWithAuthorization` (to = contract, value = amount, validBefore = now + 1h, random nonce), then sends one transaction `Memo.memo(contract, pay(inv, merchantSig, auth), memoId, memoData)`.
+- **`pay` rules:** token must be USDC or EURC; `statusOf[merchant][id]` must be Open; signature must recover to `inv.merchant` (65 bytes, low-s, v ∈ {27, 28}); `auth.value == inv.amount`. Status is set to Paid before the external calls, then `receiveWithAuthorization` into the contract and `transfer` to the merchant, then `InvoicePaid`.
+- **Cancel:** `cancel(id)` by the merchant, keyed by `msg.sender`. The Void route requires on-chain status Cancelled for settled invoices.
+- **Verification:** the server accepts a payment when the receipt contains `InvoicePaid` from `invoices.settlement` with matching id and merchant; token, amount and content hash must match the stored invoice (else `terms_mismatch`, stored). Recheck scans `InvoicePaid` by `id`.
+- **Config:** `NEXT_PUBLIC_SETTLEMENT_CONTRACT` per Vercel environment. Without it, invoice creation returns 503. Invoices created before the contract (`settlement` null) can't be paid; their pay page asks for a new link.
+- **Deployment:** from the merchant's own wallet at `/deploy` (MetaMask signs the deployment). Never with a server-held key.

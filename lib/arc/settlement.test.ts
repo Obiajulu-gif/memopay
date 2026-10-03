@@ -71,3 +71,18 @@ describe('splitSig', () => {
     expect(splitSig(`0x${'11'.repeat(32)}${'22'.repeat(32)}01`).v).toBe(28);
   });
 });
+
+describe('settlement artifact', () => {
+  it('matches the ABI the app uses (rebuild + `npm run export` in contracts/ if this fails)', async () => {
+    const { toFunctionSignature, toEventSignature } = await import('viem');
+    const artifact = (await import('./settlement-artifact.json')).default as { abi: Parameters<typeof toFunctionSignature>[0][]; bytecode: string };
+    const sigs = (abi: readonly unknown[]) =>
+      abi
+        .filter((x): x is { type: string } => typeof x === 'object' && x !== null && ['function', 'event'].includes((x as { type: string }).type))
+        .map(x => (x.type === 'event' ? toEventSignature(x as never) : toFunctionSignature(x as never)))
+        .sort();
+    const app = sigs(settlementAbi);
+    expect(sigs(artifact.abi).filter(s => app.includes(s))).toEqual(app);
+    expect(artifact.bytecode.startsWith('0x60')).toBe(true);
+  });
+});

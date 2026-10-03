@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { parseMoney } from '@/lib/invoices/schema';
 import { formatAmount } from '@/lib/format';
+import { connectWallet, walletError } from '@/lib/arc/browser';
+import { invoiceTypedData } from '@/lib/arc/settlement';
 
 type Line = { description: string; quantity: string; unit_price: string };
 const empty: Line = { description: '', quantity: '1', unit_price: '' };
@@ -32,29 +34,53 @@ export default function NewInvoiceForm() {
 
   const setLine = (i: number, patch: Partial<Line>) => setLines(ls => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
 
+  const [step, setStep] = useState<'idle' | 'drafting' | 'signing' | 'saving'>('idle');
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true);
     setErrors([]);
-    const res = await fetch('/api/invoices', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_name: client,
-        currency,
-        due_date: due || null,
-        line_items: lines.map(l => ({ description: l.description, quantity: Number(l.quantity), unit_price: l.unit_price.trim() })),
-      }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (res.status === 201) {
-      router.push(`/invoices/${body.id}`);
+    const input = {
+      client_name: client,
+      currency,
+      due_date: due || null,
+      line_items: lines.map(l => ({ description: l.description, quantity: Number(l.quantity), unit_price: l.unit_price.trim() })),
+    };
+    const post = (body: object) =>
+      fetch('/api/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(
+        async r => ({ status: r.status, body: await r.json().catch(() => ({})) }),
+      );
+    const fail = (body: { issues?: { path: (string | number)[]; message: string }[]; error?: string }) => {
+      setErrors(body.issues?.map(i => `${i.path.join(' › ') || 'Invoice'}: ${i.message}`) ?? [body.error ?? 'Could not create invoice']);
+      setBusy(false);
+      setStep('idle');
+    };
+
+    setBusy(true);
+    setStep('drafting');
+    const draft = await post(input);
+    if (draft.status !== 200) return fail(draft.body);
+
+    // The merchant signs the invoice terms (free, no transaction). The contract only pays out against this signature.
+    setStep('signing');
+    let signature: string;
+    try {
+      const { wallet, address } = await connectWallet();
+      const { settlement, chainId, terms } = draft.body.sign;
+      signature = await wallet.signTypedData({
+        account: address,
+        ...invoiceTypedData(settlement, chainId, { ...terms, amount: BigInt(terms.amount) }),
+      });
+    } catch (err) {
+      return fail({ error: walletError(err) });
+    }
+
+    setStep('saving');
+    const saved = await post({ ...input, draft: draft.body.draft, signature });
+    if (saved.status === 201) {
+      router.push(`/invoices/${saved.body.id}`);
       return;
     }
-    setErrors(
-      body.issues?.map((i: { path: (string | number)[]; message: string }) => `${i.path.join(' › ') || 'Invoice'}: ${i.message}`) ?? [body.error ?? 'Could not create invoice'],
-    );
-    setBusy(false);
+    fail(saved.body);
   }
 
   return (
@@ -107,7 +133,7 @@ export default function NewInvoiceForm() {
           <div className="total">{total !== null ? formatAmount(total, currency) : '—'}</div>
         </div>
         <button className="btn btn-primary" disabled={busy || total === null || total === 0n}>
-          {busy ? 'Creating…' : 'Create invoice'}
+          {step === 'signing' ? 'Sign in your wallet…' : busy ? 'Creating…' : 'Sign & create invoice'}
         </button>
       </div>
       {errors.length > 0 && (

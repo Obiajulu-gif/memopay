@@ -10,41 +10,50 @@ No reference fields to type, no matching bank lines to invoices by hand.
 
 | Arc feature | How MemoPay uses it |
 |---|---|
-| **Memo contract** `0x5294E9927c3306DcBaDb03fe70b92e01cCede505` | Wraps the token `transfer` and emits `Memo(sender, target, callDataHash, memoId, memo, memoIndex)`. `memoId` identifies the invoice; the payer stays `msg.sender` for the transfer, so no `approve` step is needed. |
-| **USDC as gas** | The client needs one asset. Fees are shown in dollars before paying (~$0.001). |
+| **Memo contract** `0x5294E9927c3306DcBaDb03fe70b92e01cCede505` | Every payment is sent as `Memo.memo(MemoPayInvoices, pay(...), memoId, memoData)`, so the invoice reference is attached to the transaction on-chain. |
+| **USDC as gas** | The client needs one asset. Fees are a fraction of a cent, paid in USDC. |
 | **EURC native** `0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1` | Invoices can be in euros. |
-| **Deterministic sub-second finality** | "Paid" is final the moment the receipt arrives. No confirmation counting. |
+| **Circle FiatToken v2 (EIP-3009)** | The payer authorizes exactly the invoice amount with `receiveWithAuthorization`; no open-ended approvals. |
+| **Deterministic sub-second finality** | "Paid" is final the moment the receipt arrives. |
+
+## The settlement contract
+
+[`contracts/contracts/MemoPayInvoices.sol`](contracts/contracts/MemoPayInvoices.sol) enforces the invoice on-chain:
+
+1. **Merchant signs the terms** when creating an invoice: `Invoice(id, merchant, token, amount, contentHash)` as EIP-712 typed data, bound to the chain and contract. Free, no transaction.
+2. **Payer signs an EIP-3009 `ReceiveWithAuthorization`** for exactly the amount, payable only to the contract. Free.
+3. **One transaction** through Arc's Memo contract calls `pay(invoice, merchantSig, authorization)`. The contract:
+   - accepts only USDC or EURC;
+   - refuses invoices already paid or cancelled by their merchant;
+   - checks the merchant's signature (rejecting malleable signatures and other chains);
+   - requires the authorization to equal the signed amount;
+   - pulls the funds and forwards them to the merchant in the same transaction, then emits `InvoicePaid`.
+4. **Merchant can `cancel(id)`** an open invoice; the app's Void button does this before voiding.
+
+The contract has no owner, no admin functions, and never holds funds between transactions.
+
+Tests: 16 Solidity tests (Hardhat 3, forge-std) cover payment, double payment, wrong amount, tampered terms, redirected recipient, foreign signer, high-s signatures, cross-chain replay, unsupported tokens, failed transfers and cancellation. A shared test vector proves the app's viem signing hashes exactly like the contract, and [`contracts/scripts/e2e-local.mts`](contracts/scripts/e2e-local.mts) runs the app's signing and verification code against the compiled contract on a local chain.
+
+```bash
+cd contracts
+npm install
+npm test                     # Solidity tests
+npm run build && npm run export   # refresh lib/arc/settlement-artifact.json for the app
+```
 
 ## How verification works
 
-Every invoice gets:
+The server never trusts the browser. Given a transaction hash it fetches the receipt from Arc and looks for `InvoicePaid` from the invoice's settlement contract with this invoice's `id` and merchant, then checks token, amount and content hash against the stored invoice. Because the contract only emits `InvoicePaid` after moving exactly the signed amount to the merchant, that event is proof of payment. The invoice is marked paid with a conditional update (`where status = 'open'`).
 
-- `memo_id = keccak256("memopay:v1:" + invoiceId)`
-- `content_hash = keccak256(canonical JSON of the invoice)`, sent in `memoData` as `memopay:v1:<number>:<content_hash>`, so the explorer shows which invoice version was paid.
+If the client closes the tab before the app confirms, the merchant's invoice page rechecks automatically by scanning Arc for `InvoicePaid` events with the invoice's `id`.
 
-The pay page sends:
-
-```
-Memo.memo(token, transfer(merchant, amount), memo_id, memoData)
-```
-
-The server never trusts the browser. Given a transaction hash it fetches the receipt from Arc and requires:
-
-1. `status == success`;
-2. a `Memo` event emitted by the Memo contract with this invoice's `memoId` (the contract only emits it after the inner transfer succeeds);
-3. `target` equal to the invoice currency's token;
-4. `callDataHash` equal to `keccak256(transfer(merchant, amount))`.
-
-Together these prove amount, token and recipient without parsing transfer logs. The invoice is marked paid with a conditional update (`where status = 'open'`), so it can't be marked paid twice. Payments that carry the invoice's `memoId` but don't match are kept and shown to the merchant as mismatched (`wrong_token`, `wrong_amount_or_recipient`, `duplicate`, `invoice_void`).
-
-If the client closes the tab before the app confirms, the merchant's invoice page rechecks automatically: it scans Arc logs for the `memoId` from the block the invoice was created at, in 10,000-block chunks.
-
-Code: [`lib/arc/verify.ts`](lib/arc/verify.ts), [`lib/arc/scan.ts`](lib/arc/scan.ts), [`lib/payments/record.ts`](lib/payments/record.ts).
+Code: [`lib/arc/settlement.ts`](lib/arc/settlement.ts), [`lib/arc/verify.ts`](lib/arc/verify.ts), [`lib/arc/scan.ts`](lib/arc/scan.ts), [`lib/payments/record.ts`](lib/payments/record.ts).
 
 ## Mainnet proof
 
 Added after the mainnet smoke test:
 
+- MemoPayInvoices contract: _pending_
 - USDC invoice payment: _pending_
 - EURC invoice payment: _pending_
 
@@ -87,7 +96,7 @@ Set `ARC_NETWORK` and `NEXT_PUBLIC_ARC_NETWORK` to `testnet` (chain 5042002, fau
 
 ## Stack
 
-Next.js 16 (App Router), viem, Neon Postgres (`postgres`), zod, jose, vitest. No custom smart contract.
+Next.js 16 (App Router), viem, Neon Postgres (`postgres`), zod, jose, vitest. Solidity 0.8.28 with Hardhat 3.
 
 ## What's next
 
@@ -96,7 +105,6 @@ Next.js 16 (App Router), viem, Neon Postgres (`postgres`), zod, jose, vitest. No
 - Paying from other chains with Unified Balance / Gateway
 - Sending invoices by email
 - Team accounts
-- On-chain invoice registry
 - Nigerian NRS e-invoice reference (IRN) in `memoData`
 - Refunds
 - Smart-contract-wallet payers

@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "build": "hardhat build",
-    "test": "hardhat test solidity"
+    "test": "hardhat test solidity",
+    "export": "node scripts/export-artifact.mjs"
   },
   "devDependencies": {
     "forge-std": "github:foundry-rs/forge-std#v1.9.7",

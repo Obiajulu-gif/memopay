@@ -55,7 +55,10 @@ export default async function PayPage({ params }: PageProps<'/pay/[id]'>) {
         {inv.status === 'open' && inv.network !== currentNetwork() && (
           <div className="alert alert-error">This invoice is payable on Arc {inv.network}, not on this site&apos;s network.</div>
         )}
-        {inv.status === 'open' && inv.network === currentNetwork() && (
+        {inv.status === 'open' && inv.network === currentNetwork() && !inv.settlement && (
+          <div className="alert alert-info">This invoice was created before on-chain settlement. Ask the sender for a new link.</div>
+        )}
+        {inv.status === 'open' && inv.network === currentNetwork() && inv.settlement && inv.merchant_sig && (
           <PayButton
             invoice={{
               id: inv.id,
@@ -64,13 +67,15 @@ export default async function PayPage({ params }: PageProps<'/pay/[id]'>) {
               merchant: inv.merchant,
               amount: inv.amount.toString(),
               currency: inv.currency,
+              merchant_sig: inv.merchant_sig,
+              settlement: inv.settlement,
             }}
           />
         )}
       </div>
       <p className="muted small">
-        Paid through Arc&apos;s Memo contract: the invoice ID is attached to your transfer on-chain, so the sender&apos;s books
-        update automatically.
+        Paid through the MemoPay settlement contract on Arc. It only accepts exactly this amount for this invoice, once, and
+        Arc&apos;s Memo contract attaches the invoice ID to the payment.
       </p>
     </div>
   );
