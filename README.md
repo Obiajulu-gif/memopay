@@ -55,7 +55,7 @@ Code: [`lib/arc/settlement.ts`](lib/arc/settlement.ts), [`lib/arc/verify.ts`](li
 
 Added after the mainnet smoke test:
 
-- MemoPayInvoices contract: _pending_
+- MemoPayInvoices contract: [`0x4bce44e8e6bf80971886521cdf9b1e3ae472fcbd`](https://explorer.arc.io/address/0x4bce44e8e6bf80971886521cdf9b1e3ae472fcbd) on Arc mainnet. Runtime bytecode matches `contracts/contracts/MemoPayInvoices.sol` compiled with solc 0.8.28 (optimizer 200 runs, Cancun), including metadata hash.
 - USDC invoice payment: _pending_
 - EURC invoice payment: _pending_
 
