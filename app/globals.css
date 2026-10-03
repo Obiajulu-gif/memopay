@@ -57,7 +57,7 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; letter-spacing: -0.01
 /* Header */
 .header { background: rgba(10, 21, 48, 0.86); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
 .header .container { display: flex; align-items: center; justify-content: space-between; height: 64px; gap: 12px; }
-.brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; font-size: 19px; letter-spacing: -0.02em; color: var(--text); }
+.brand { display: inline-flex; align-items: center; gap: 9px; font-weight: 700; font-size: 19px; letter-spacing: -0.02em; color: var(--text); }
 .brand:hover { text-decoration: none; }
 .brand svg { flex: none; }
 .nav { display: flex; gap: 14px; align-items: center; font-size: 14px; }

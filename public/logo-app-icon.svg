@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="MemoPay">
+  <!-- Square app icon / avatar: the mark on the app's navy background -->
+  <rect width="512" height="512" rx="112" fill="#0a1530"/>
+  <g transform="translate(43 66) scale(6)">
+    <path d="M13 9a4 4 0 0 1 4-4h26a4 4 0 0 1 4 4v38l-5.67 5-5.66-5-5.67 5-5.67-5-5.66 5L13 47z" fill="#f4f7fd"/>
+    <rect x="19" y="13" width="22" height="4.5" rx="2.25" fill="#2775ca"/>
+    <rect x="19" y="22" width="13" height="3.5" rx="1.75" fill="#8db8ff"/>
+    <rect x="19" y="29" width="17" height="3.5" rx="1.75" fill="#c9d6f2"/>
+    <circle cx="45" cy="45" r="13" fill="#0a1530"/>
+    <circle cx="45" cy="45" r="10" fill="#38cfa9"/>
+    <path d="M40 45.2l3.4 3.4L50.2 41.6" fill="none" stroke="#0a1530" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

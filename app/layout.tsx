@@ -15,14 +15,17 @@ export const metadata: Metadata = {
   description: 'Invoice links paid in USDC or EURC on Arc. Each payment carries the invoice ID on-chain.',
 };
 
-// A slip with a memo stamp: the product in one mark.
-function Mark() {
+// MemoPay mark: an invoice slip with a torn receipt edge and a "paid" stamp (same art as public/logo-mark.svg).
+function Mark({ size = 30 }: { size?: number }) {
   return (
-    <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
-      <path d="M5 3h16v18l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5L5 21z" fill="#f4f7fd" />
-      <rect x="8" y="7" width="10" height="1.8" rx=".9" fill="#2775ca" />
-      <rect x="8" y="11" width="6" height="1.8" rx=".9" fill="#8db8ff" />
-      <circle cx="17" cy="15.5" r="3.2" fill="none" stroke="#38cfa9" strokeWidth="1.6" />
+    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
+      <path d="M13 9a4 4 0 0 1 4-4h26a4 4 0 0 1 4 4v38l-5.67 5-5.66-5-5.67 5-5.67-5-5.66 5L13 47z" fill="#f4f7fd" />
+      <rect x="19" y="13" width="22" height="4.5" rx="2.25" fill="#2775ca" />
+      <rect x="19" y="22" width="13" height="3.5" rx="1.75" fill="#8db8ff" />
+      <rect x="19" y="29" width="17" height="3.5" rx="1.75" fill="#c9d6f2" />
+      <circle cx="45" cy="45" r="13" fill="#0a1530" />
+      <circle cx="45" cy="45" r="10" fill="#38cfa9" />
+      <path d="M40 45.2l3.4 3.4L50.2 41.6" fill="none" stroke="#0a1530" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

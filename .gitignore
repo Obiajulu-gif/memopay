@@ -42,3 +42,6 @@ next-env.d.ts
 .superpowers/
 !.env.example
 .pglite/
+
+# brag renders
+brag-output/
