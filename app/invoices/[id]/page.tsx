@@ -31,9 +31,9 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
         <h1>{inv.number}</h1>
         <span className={`badge badge-${inv.status}`}>{inv.status}</span>
       </div>
-      <p className="muted">For {inv.client_name} · due {formatDate(inv.due_date)}</p>
+      <p className="muted">For {inv.client_name}, due {formatDate(inv.due_date)}</p>
 
-      <div className="card">
+      <div className="slip">
         <div className="total">{formatAmount(inv.amount, inv.currency)}</div>
         <div className="table-wrap">
           <table style={{ marginTop: 12 }}>

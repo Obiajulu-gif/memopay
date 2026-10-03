@@ -14,7 +14,7 @@ export default async function ReceiptPage({ params }: PageProps<'/r/[id]'>) {
 
   return (
     <div className="container narrow">
-      <div className="card">
+      <div className="slip">
         <div className="spread">
           <div>
             <div className="muted small">Payment receipt</div>

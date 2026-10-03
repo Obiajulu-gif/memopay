@@ -72,7 +72,7 @@ npm test
 npm run dev
 ```
 
-Database: create a Supabase project and run [`db/schema.sql`](db/schema.sql) in its SQL editor, then put the pooler connection string in `DATABASE_URL`.
+Database: create a [Neon](https://neon.tech) project, run [`db/schema.sql`](db/schema.sql) in its SQL editor, then put the pooled connection string in `DATABASE_URL`. Any Postgres works.
 
 For a database without any account, run Postgres in WebAssembly:
 
@@ -87,7 +87,7 @@ Set `ARC_NETWORK` and `NEXT_PUBLIC_ARC_NETWORK` to `testnet` (chain 5042002, fau
 
 ## Stack
 
-Next.js 16 (App Router), viem, Postgres (`postgres`), zod, jose, vitest. No custom smart contract.
+Next.js 16 (App Router), viem, Neon Postgres (`postgres`), zod, jose, vitest. No custom smart contract.
 
 ## What's next
 

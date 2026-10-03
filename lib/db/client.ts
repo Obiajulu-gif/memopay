@@ -7,8 +7,10 @@ declare global {
 function make() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is not set');
-  // prepare:false is required by the Supabase transaction pooler. int8 comes back as string; callers convert with BigInt().
-  return postgres(url, { prepare: false });
+  // Works with Neon's pooled URL (sslmode=require in the string) and any Postgres.
+  // prepare:false is required by transaction poolers (Neon/PgBouncer). Small pool per serverless instance.
+  // int8 comes back as string; callers convert with BigInt().
+  return postgres(url, { prepare: false, max: 3, idle_timeout: 20 });
 }
 
 // Lazy so unit tests and builds don't need a database.

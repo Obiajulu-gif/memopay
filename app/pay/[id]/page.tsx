@@ -14,7 +14,7 @@ export default async function PayPage({ params }: PageProps<'/pay/[id]'>) {
 
   return (
     <div className="container narrow">
-      <div className="card">
+      <div className="slip">
         <div className="spread">
           <div>
             <div className="muted small">Invoice {inv.number}</div>
