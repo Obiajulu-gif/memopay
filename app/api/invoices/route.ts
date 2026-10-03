@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { getMerchant, unauthorized } from '@/lib/auth/current';
-import { publicClient } from '@/lib/arc/config';
+import { currentNetwork, publicClient } from '@/lib/arc/config';
 import { contentHash, memoIdFor } from '@/lib/arc/encode';
 import { insertInvoice, nextInvoiceNumber } from '@/lib/db/invoices';
 import { createInvoiceSchema } from '@/lib/invoices/schema';
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     const number = await nextInvoiceNumber(merchant);
     const content = { number, merchant, client_name: input.client_name, currency: input.currency, amount: input.amount, line_items: input.line_items, due_date: input.due_date };
     try {
-      const inv = await insertInvoice({ ...content, id, memo_id: memoIdFor(id), content_hash: contentHash(content), created_block });
+      const inv = await insertInvoice({ ...content, network: currentNetwork(), id, memo_id: memoIdFor(id), content_hash: contentHash(content), created_block });
       return Response.json({ id: inv.id }, { status: 201 });
     } catch (e) {
       if ((e as { code?: string }).code !== '23505' || attempt === 1) throw e;

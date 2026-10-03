@@ -11,6 +11,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const invoice = await getOwnedInvoice(id, merchant);
   if (!invoice) return Response.json({ error: 'Invoice not found' }, { status: 404 });
 
+  if (invoice.network !== currentNetwork()) return Response.json({ error: `This invoice is on Arc ${invoice.network}` }, { status: 409 });
   const client = publicClient();
   const chunk = BigInt(process.env.ARC_LOGS_CHUNK || '10000');
   try {

@@ -12,7 +12,7 @@ const { checkTx } = await import('./check');
 const cfg = arcConfig('testnet');
 const M = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
 const FROM = '0x9999999999999999999999999999999999999999';
-const invoice = { id: 'inv-1', merchant: M, currency: 'USDC', amount: 50_000n, memo_id: memoIdFor('inv-1'), status: 'open', paid_tx: null } as unknown as Invoice;
+const invoice = { id: 'inv-1', merchant: M, currency: 'USDC', amount: 50_000n, memo_id: memoIdFor('inv-1'), status: 'open', paid_tx: null, network: 'testnet' } as unknown as Invoice;
 
 const good = makeReceipt({
   logs: [memoLog({ emitter: cfg.memo, sender: FROM, target: cfg.tokens.USDC, callDataHash: keccak256(transferCallData(M, 50_000n)), memoId: invoice.memo_id as `0x${string}` })],
@@ -34,6 +34,14 @@ describe('checkTx', () => {
   it('ignores a transaction without this invoice memo', async () => {
     const res = await checkTx(invoice, '0xaa', clientWith(async () => ({ ...makeReceipt({ logs: [] }), from: FROM })));
     expect(res).toEqual({ status: 'ignored', reason: 'no_memo' });
+  });
+
+  it('refuses invoices from another Arc network without touching the chain', async () => {
+    const getTransactionReceipt = vi.fn(async () => ({ ...good, from: FROM }));
+    const res = await checkTx({ ...invoice, network: 'mainnet' } as Invoice, '0xaa', { getTransactionReceipt } as unknown as PublicClient);
+    expect(res).toEqual({ status: 'ignored', reason: 'wrong_network' });
+    expect(getTransactionReceipt).not.toHaveBeenCalled();
+    expect(recordVerification).not.toHaveBeenCalled();
   });
 
   it('propagates RPC failures without recording anything', async () => {

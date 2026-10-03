@@ -1,16 +1,54 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { verifyMessage } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { signInMessage } from './message';
+import { checkSignIn, signInMessage } from './message';
 import { readSession, signSession } from './session';
 
 beforeAll(() => {
   process.env.SESSION_SECRET = 'test-secret-test-secret-test-secret-1234';
 });
 
+const fields = (address: string, nonce = 'abcdef0123456789abcdef0123456789') => ({
+  address,
+  nonce,
+  domain: 'memopay.example',
+  uri: 'https://memopay.example',
+  chainId: 5042002,
+  issuedAt: new Date('2026-10-02T12:00:00Z'),
+});
+
 describe('signInMessage', () => {
-  it('uses the exact sign-in format with a lowercase address', () => {
-    expect(signInMessage('0xABC', 'n1')).toBe('MemoPay sign-in · 0xabc · n1');
+  it('is an EIP-4361 message bound to the domain and nonce', () => {
+    const m = signInMessage(fields('0x1111111111111111111111111111111111111111'));
+    expect(m.startsWith('memopay.example wants you to sign in with your Ethereum account:')).toBe(true);
+    expect(m).toContain('Nonce: abcdef0123456789abcdef0123456789');
+    expect(m).toContain('URI: https://memopay.example');
+  });
+});
+
+describe('checkSignIn', () => {
+  it('accepts a valid signature for the expected domain', async () => {
+    const acct = privateKeyToAccount(generatePrivateKey());
+    const message = signInMessage(fields(acct.address));
+    const signature = await acct.signMessage({ message });
+    expect(await checkSignIn(message, signature, 'memopay.example')).toEqual({ address: acct.address.toLowerCase(), nonce: 'abcdef0123456789abcdef0123456789' });
+  });
+
+  it('rejects a message signed for another domain (phishing site)', async () => {
+    const acct = privateKeyToAccount(generatePrivateKey());
+    const message = signInMessage({ ...fields(acct.address), domain: 'evil.example', uri: 'https://evil.example' });
+    const signature = await acct.signMessage({ message });
+    expect(await checkSignIn(message, signature, 'memopay.example')).toBeNull();
+  });
+
+  it('rejects a signature from a different wallet', async () => {
+    const acct = privateKeyToAccount(generatePrivateKey());
+    const other = privateKeyToAccount(generatePrivateKey());
+    const message = signInMessage(fields(acct.address));
+    expect(await checkSignIn(message, await other.signMessage({ message }), 'memopay.example')).toBeNull();
+  });
+
+  it('rejects garbage', async () => {
+    expect(await checkSignIn('hello', '0x00', 'memopay.example')).toBeNull();
   });
 });
 
@@ -29,14 +67,5 @@ describe('session', () => {
     process.env.SESSION_SECRET = 'another-secret-another-secret-another-1';
     expect(await readSession(token)).toBeNull();
     process.env.SESSION_SECRET = 'test-secret-test-secret-test-secret-1234';
-  });
-});
-
-describe('wallet signature', () => {
-  it('verifies only for the nonce that was signed', async () => {
-    const account = privateKeyToAccount(generatePrivateKey());
-    const signature = await account.signMessage({ message: signInMessage(account.address, 'n1') });
-    expect(await verifyMessage({ address: account.address, message: signInMessage(account.address, 'n1'), signature })).toBe(true);
-    expect(await verifyMessage({ address: account.address, message: signInMessage(account.address, 'n2'), signature })).toBe(false);
   });
 });

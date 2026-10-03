@@ -1,5 +1,5 @@
 import { db } from './client';
-import type { Currency } from '@/lib/arc/config';
+import type { ArcNetwork, Currency } from '@/lib/arc/config';
 import type { LineItem } from '@/lib/arc/encode';
 
 export type InvoiceStatus = 'open' | 'paid' | 'void';
@@ -8,6 +8,7 @@ export type Invoice = {
   id: string;
   number: string;
   merchant: string;
+  network: ArcNetwork;
   client_name: string;
   currency: Currency;
   amount: bigint;
@@ -29,7 +30,7 @@ type Row = Omit<Invoice, 'line_items' | 'amount' | 'created_block'> & {
   line_items: Array<{ description: string; quantity: number; unit_amount: string }>;
 };
 
-const COLS = `id, number, merchant, client_name, currency, amount, line_items, to_char(due_date, 'YYYY-MM-DD') as due_date,
+const COLS = `id, number, merchant, network, client_name, currency, amount, line_items, to_char(due_date, 'YYYY-MM-DD') as due_date,
   memo_id, content_hash, created_block, status, paid_tx, paid_by, paid_at, created_at`;
 
 function toInvoice(r: Row): Invoice {
@@ -47,20 +48,24 @@ export async function insertInvoice(inv: NewInvoice): Promise<Invoice> {
   const sql = db();
   const line_items = inv.line_items.map(li => ({ ...li, unit_amount: li.unit_amount.toString() }));
   const [row] = await sql<Row[]>`
-    insert into invoices (id, number, merchant, client_name, currency, amount, line_items, due_date, memo_id, content_hash, created_block)
-    values (${inv.id}, ${inv.number}, ${inv.merchant}, ${inv.client_name}, ${inv.currency}, ${inv.amount.toString()},
+    insert into invoices (id, number, merchant, network, client_name, currency, amount, line_items, due_date, memo_id, content_hash, created_block)
+    values (${inv.id}, ${inv.number}, ${inv.merchant}, ${inv.network}, ${inv.client_name}, ${inv.currency}, ${inv.amount.toString()},
             ${sql.json(line_items)}, ${inv.due_date}, ${inv.memo_id}, ${inv.content_hash}, ${inv.created_block.toString()})
     returning ${sql.unsafe(COLS)}`;
   return toInvoice(row);
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function getInvoice(id: string): Promise<Invoice | null> {
+  if (!UUID_RE.test(id)) return null; // Postgres would throw 22P02 on a malformed uuid
   const sql = db();
   const [row] = await sql<Row[]>`select ${sql.unsafe(COLS)} from invoices where id = ${id}`;
   return row ? toInvoice(row) : null;
 }
 
 export async function getOwnedInvoice(id: string, merchant: string): Promise<Invoice | null> {
+  if (!UUID_RE.test(id)) return null;
   const sql = db();
   const [row] = await sql<Row[]>`select ${sql.unsafe(COLS)} from invoices where id = ${id} and merchant = ${merchant}`;
   return row ? toInvoice(row) : null;

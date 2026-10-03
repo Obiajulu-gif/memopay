@@ -14,7 +14,7 @@ export async function insertPayment(p: Omit<Payment, 'created_at'>): Promise<voi
   await db()`
     insert into payments (tx_hash, invoice_id, payer, matched, reason, block)
     values (${p.tx_hash}, ${p.invoice_id}, ${p.payer}, ${p.matched}, ${p.reason}, ${p.block.toString()})
-    on conflict (tx_hash) do nothing`;
+    on conflict (tx_hash, invoice_id) do nothing`;
 }
 
 export async function listPayments(invoiceId: string): Promise<Payment[]> {

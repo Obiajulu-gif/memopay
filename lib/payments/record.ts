@@ -12,7 +12,8 @@ export function decideRecord(status: InvoiceStatus, paidTx: string | null, txHas
   }
   if (status === 'open') return { markPaid: true, payment: { matched: true, reason: null } };
   if (status === 'void') return { markPaid: false, payment: { matched: false, reason: 'invoice_void' } };
-  if (paidTx?.toLowerCase() === txHash.toLowerCase()) return { markPaid: false, payment: null };
+  // Same tx again: re-insert the matched row (no-op if present) so a crash between markPaid and insertPayment heals.
+  if (paidTx?.toLowerCase() === txHash.toLowerCase()) return { markPaid: false, payment: { matched: true, reason: null } };
   return { markPaid: false, payment: { matched: false, reason: 'duplicate' } };
 }
 
@@ -37,7 +38,7 @@ export async function recordVerification(
     action = decideRecord(fresh?.status ?? 'void', fresh?.paid_tx ?? null, tx, result);
   }
 
-  if (!action.payment) return result.ok ? 'already_paid' : 'ignored';
+  if (!action.payment) return 'ignored';
   await insertPayment({ tx_hash: tx, invoice_id: invoice.id, payer, ...action.payment, block });
-  return 'mismatch';
+  return action.payment.matched ? 'already_paid' : 'mismatch';
 }

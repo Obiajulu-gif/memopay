@@ -8,7 +8,10 @@ export type CheckResult = { status: RecordOutcome; reason?: string };
 
 // Throws on RPC failure; callers map that to 503 and nothing is recorded.
 export async function checkTx(invoice: Invoice, txHash: string, client: PublicClient): Promise<CheckResult> {
-  const cfg = arcConfig(currentNetwork());
+  const network = currentNetwork();
+  // A deployment only settles invoices created for its own Arc network (testnet USDC must never pay a mainnet invoice).
+  if (invoice.network !== network) return { status: 'ignored', reason: 'wrong_network' };
+  const cfg = arcConfig(network);
   const receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
   const result = verifyPayment(receipt, {
     memoId: invoice.memo_id as Hex,

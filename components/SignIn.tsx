@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { connectWallet, walletError } from '@/lib/arc/browser';
+import { clientNetwork, connectWallet, walletError } from '@/lib/arc/browser';
+import { arcConfig } from '@/lib/arc/config';
 import { signInMessage } from '@/lib/auth/message';
 
 export default function SignIn() {
@@ -16,11 +17,18 @@ export default function SignIn() {
     try {
       const { wallet, address } = await connectWallet();
       const { nonce } = await fetch('/api/auth/nonce').then(r => r.json());
-      const signature = await wallet.signMessage({ account: address, message: signInMessage(address, nonce) });
+      const message = signInMessage({
+        address,
+        nonce,
+        domain: window.location.host,
+        uri: window.location.origin,
+        chainId: arcConfig(clientNetwork()).chainId,
+      });
+      const signature = await wallet.signMessage({ account: address, message });
       const res = await fetch('/api/auth/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address, nonce, signature }),
+        body: JSON.stringify({ message, signature }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? 'Sign-in failed');
       router.push('/dashboard');

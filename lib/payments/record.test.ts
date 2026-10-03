@@ -10,8 +10,8 @@ describe('decideRecord', () => {
     expect(decideRecord('open', null, TX, ok)).toEqual({ markPaid: true, payment: { matched: true, reason: null } });
   });
 
-  it('is a no-op when the same tx is claimed again', () => {
-    expect(decideRecord('paid', TX, TX, ok)).toEqual({ markPaid: false, payment: null });
+  it('re-records the matched row when the same tx is claimed again (repairs a crash between writes)', () => {
+    expect(decideRecord('paid', TX, TX, ok)).toEqual({ markPaid: false, payment: { matched: true, reason: null } });
   });
 
   it('records a second valid payment as duplicate', () => {

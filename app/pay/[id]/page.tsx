@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { currentNetwork } from '@/lib/arc/config';
 import { getInvoice } from '@/lib/db/invoices';
 import { formatAmount, formatDate, shortAddr } from '@/lib/format';
 import PayButton from './PayButton';
@@ -25,7 +26,7 @@ export default async function PayPage({ params }: PageProps<'/pay/[id]'>) {
           <dt>Billed to</dt><dd>{inv.client_name}</dd>
           <dt>Pay to</dt><dd className="mono" title={inv.merchant}>{shortAddr(inv.merchant)}</dd>
           <dt>Due</dt><dd>{formatDate(inv.due_date)}</dd>
-          <dt>Network</dt><dd>Arc {process.env.NEXT_PUBLIC_ARC_NETWORK === 'mainnet' ? '' : 'Testnet'}</dd>
+          <dt>Network</dt><dd>Arc {inv.network === 'mainnet' ? 'mainnet' : 'testnet'}</dd>
         </dl>
         <div className="table-wrap">
           <table style={{ marginTop: 16 }}>
@@ -51,7 +52,10 @@ export default async function PayPage({ params }: PageProps<'/pay/[id]'>) {
           </div>
         )}
         {inv.status === 'void' && <div className="alert alert-info">This invoice was cancelled by the sender. Don&apos;t pay it.</div>}
-        {inv.status === 'open' && (
+        {inv.status === 'open' && inv.network !== currentNetwork() && (
+          <div className="alert alert-error">This invoice is payable on Arc {inv.network}, not on this site&apos;s network.</div>
+        )}
+        {inv.status === 'open' && inv.network === currentNetwork() && (
           <PayButton
             invoice={{
               id: inv.id,
