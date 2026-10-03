@@ -23,6 +23,7 @@ export async function checkTx(invoice: Invoice, txHash: string, client: PublicCl
     amount: invoice.amount,
     contentHash: invoice.content_hash as Hex,
   });
-  const status = await recordVerification(invoice, txHash, result, receipt.blockNumber, receipt.from.toLowerCase());
+  // Payer comes from the verified event (the authorization signer); for non-payments it's unknown.
+  const status = await recordVerification(invoice, txHash, result, receipt.blockNumber);
   return result.ok ? { status } : { status, reason: result.reason };
 }

@@ -52,7 +52,7 @@ export default async function InvoicePage({ params }: PageProps<'/invoices/[id]'
         </div>
       </div>
 
-      <InvoiceActions id={inv.id} status={inv.status} payUrl={payUrl} settlement={inv.settlement} memoId={inv.memo_id} />
+      <InvoiceActions id={inv.id} status={inv.status} payUrl={payUrl} settlement={inv.settlement} memoId={inv.memo_id} merchant={inv.merchant} />
 
       {inv.status === 'paid' && (
         <div className="card">

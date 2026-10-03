@@ -49,6 +49,15 @@ contract MemoPayInvoicesTest is Test {
         return abi.encodePacked(r, s, v);
     }
 
+    /// Authorization whose nonce is the invoice digest, as the app builds it.
+    function _authFor(MockFiatToken token, MemoPayInvoices.Invoice memory inv, uint256 value)
+        internal
+        view
+        returns (MemoPayInvoices.Authorization memory)
+    {
+        return _auth(token, value, invoices.hashInvoice(inv));
+    }
+
     function _auth(MockFiatToken token, uint256 value, bytes32 nonce)
         internal
         view
@@ -80,7 +89,10 @@ contract MemoPayInvoicesTest is Test {
         MemoPayInvoices.Invoice memory inv = _invoice(address(usdc));
         vm.expectEmit(true, true, true, true, address(invoices));
         emit InvoicePaid(ID, merchant, payer, address(usdc), AMOUNT, CONTENT);
-        invoices.pay(inv, _merchantSig(inv, merchantKey), _auth(usdc, AMOUNT, bytes32(uint256(1))));
+        bytes memory mSig = _merchantSig(inv, merchantKey);
+        MemoPayInvoices.Authorization memory pAuth = _authFor(usdc, inv, AMOUNT);
+        vm.prank(payer);
+        invoices.pay(inv, mSig, pAuth);
 
         assertEq(usdc.balanceOf(merchant), AMOUNT);
         assertEq(usdc.balanceOf(payer), 1_000_000 - AMOUNT);
@@ -90,34 +102,67 @@ contract MemoPayInvoicesTest is Test {
 
     function test_PayWorksForEurc() public {
         MemoPayInvoices.Invoice memory inv = _invoice(address(eurc));
-        invoices.pay(inv, _merchantSig(inv, merchantKey), _auth(eurc, AMOUNT, bytes32(uint256(1))));
+        bytes memory mSig = _merchantSig(inv, merchantKey);
+        MemoPayInvoices.Authorization memory pAuth = _authFor(eurc, inv, AMOUNT);
+        vm.prank(payer);
+        invoices.pay(inv, mSig, pAuth);
         assertEq(eurc.balanceOf(merchant), AMOUNT);
     }
 
-    function test_AnyoneCanSubmitThePayment() public {
+    function test_RevertWhen_SubmittedBySomeoneElse() public {
         MemoPayInvoices.Invoice memory inv = _invoice(address(usdc));
         bytes memory sig = _merchantSig(inv, merchantKey);
-        MemoPayInvoices.Authorization memory a = _auth(usdc, AMOUNT, bytes32(uint256(1)));
-        vm.prank(address(0xCAFE));
+        MemoPayInvoices.Authorization memory a = _authFor(usdc, inv, AMOUNT);
+        vm.prank(address(0xCAFE)); // a front-runner copies the payer's exact call
+        vm.expectRevert(MemoPayInvoices.NotPayer.selector);
         invoices.pay(inv, sig, a);
-        assertEq(usdc.balanceOf(merchant), AMOUNT);
+    }
+
+    function test_RevertWhen_AuthorizationReusedForAnotherInvoice() public {
+        // Victim authorizes payment of their invoice.
+        MemoPayInvoices.Invoice memory victimInv = _invoice(address(usdc));
+        MemoPayInvoices.Authorization memory victimAuth = _authFor(usdc, victimInv, AMOUNT);
+        // Attacker signs their own invoice for the same token and amount and tries to spend the victim's authorization.
+        uint256 attackerKey = 0xBADBAD;
+        MemoPayInvoices.Invoice memory attackerInv = MemoPayInvoices.Invoice({
+            id: keccak256("attacker"), merchant: vm.addr(attackerKey), token: address(usdc), amount: AMOUNT, contentHash: CONTENT
+        });
+        bytes memory attackerSig = _merchantSig(attackerInv, attackerKey);
+        vm.prank(payer);
+        vm.expectRevert(MemoPayInvoices.AuthorizationNotForInvoice.selector);
+        invoices.pay(attackerInv, attackerSig, victimAuth);
+        assertEq(usdc.balanceOf(vm.addr(attackerKey)), 0);
+    }
+
+    function test_RevertWhen_MerchantIsZero() public {
+        MemoPayInvoices.Invoice memory inv = _invoice(address(usdc));
+        inv.merchant = address(0);
+        bytes memory garbage = abi.encodePacked(bytes32(uint256(1)), bytes32(uint256(2)), uint8(27));
+        MemoPayInvoices.Authorization memory a = _authFor(usdc, inv, AMOUNT);
+        vm.prank(payer);
+        vm.expectRevert(MemoPayInvoices.BadMerchantSignature.selector);
+        invoices.pay(inv, garbage, a);
     }
 
     function test_RevertWhen_PaidTwice() public {
         MemoPayInvoices.Invoice memory inv = _invoice(address(usdc));
         bytes memory sig = _merchantSig(inv, merchantKey);
-        invoices.pay(inv, sig, _auth(usdc, AMOUNT, bytes32(uint256(1))));
-        MemoPayInvoices.Authorization memory second = _auth(usdc, AMOUNT, bytes32(uint256(2)));
+        MemoPayInvoices.Authorization memory first = _authFor(usdc, inv, AMOUNT);
+        vm.prank(payer);
+        invoices.pay(inv, sig, first);
+        MemoPayInvoices.Authorization memory second = _authFor(usdc, inv, AMOUNT);
         vm.expectRevert(abi.encodeWithSelector(MemoPayInvoices.InvoiceNotOpen.selector, ID));
+        vm.prank(payer);
         invoices.pay(inv, sig, second);
         assertEq(usdc.balanceOf(merchant), AMOUNT);
     }
 
     function test_RevertWhen_AuthorizationAmountDiffers() public {
         MemoPayInvoices.Invoice memory inv = _invoice(address(usdc));
-        MemoPayInvoices.Authorization memory a = _auth(usdc, AMOUNT - 1, bytes32(uint256(1)));
+        MemoPayInvoices.Authorization memory a = _authFor(usdc, inv, AMOUNT - 1);
         bytes memory sig = _merchantSig(inv, merchantKey);
         vm.expectRevert(MemoPayInvoices.AmountMismatch.selector);
+        vm.prank(payer);
         invoices.pay(inv, sig, a);
     }
 
@@ -125,16 +170,18 @@ contract MemoPayInvoicesTest is Test {
         MemoPayInvoices.Invoice memory inv = _invoice(address(usdc));
         bytes memory sig = _merchantSig(inv, merchantKey);
         inv.amount = 1; // payer tries to pay less than the merchant signed
-        MemoPayInvoices.Authorization memory a = _auth(usdc, 1, bytes32(uint256(1)));
+        MemoPayInvoices.Authorization memory a = _authFor(usdc, inv, 1);
         vm.expectRevert(MemoPayInvoices.BadMerchantSignature.selector);
+        vm.prank(payer);
         invoices.pay(inv, sig, a);
     }
 
     function test_RevertWhen_SignedBySomeoneElse() public {
         MemoPayInvoices.Invoice memory inv = _invoice(address(usdc));
         bytes memory sig = _merchantSig(inv, 0xBAD);
-        MemoPayInvoices.Authorization memory a = _auth(usdc, AMOUNT, bytes32(uint256(1)));
+        MemoPayInvoices.Authorization memory a = _authFor(usdc, inv, AMOUNT);
         vm.expectRevert(MemoPayInvoices.BadMerchantSignature.selector);
+        vm.prank(payer);
         invoices.pay(inv, sig, a);
     }
 
@@ -142,16 +189,18 @@ contract MemoPayInvoicesTest is Test {
         MemoPayInvoices.Invoice memory inv = _invoice(address(usdc));
         bytes memory sig = _merchantSig(inv, merchantKey);
         inv.merchant = address(0xEE11); // attacker swaps in their own address
-        MemoPayInvoices.Authorization memory a = _auth(usdc, AMOUNT, bytes32(uint256(1)));
+        MemoPayInvoices.Authorization memory a = _authFor(usdc, inv, AMOUNT);
         vm.expectRevert(MemoPayInvoices.BadMerchantSignature.selector);
+        vm.prank(payer);
         invoices.pay(inv, sig, a);
     }
 
     function test_RevertWhen_TokenNotSupported() public {
         MemoPayInvoices.Invoice memory inv = _invoice(address(other));
         bytes memory sig = _merchantSig(inv, merchantKey);
-        MemoPayInvoices.Authorization memory a = _auth(other, AMOUNT, bytes32(uint256(1)));
+        MemoPayInvoices.Authorization memory a = _authFor(other, inv, AMOUNT);
         vm.expectRevert(abi.encodeWithSelector(MemoPayInvoices.UnsupportedToken.selector, address(other)));
+        vm.prank(payer);
         invoices.pay(inv, sig, a);
     }
 
@@ -160,8 +209,9 @@ contract MemoPayInvoicesTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(merchantKey, invoices.hashInvoice(inv));
         uint256 n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141;
         bytes memory malleated = abi.encodePacked(r, bytes32(n - uint256(s)), v == 27 ? uint8(28) : uint8(27));
-        MemoPayInvoices.Authorization memory a = _auth(usdc, AMOUNT, bytes32(uint256(1)));
+        MemoPayInvoices.Authorization memory a = _authFor(usdc, inv, AMOUNT);
         vm.expectRevert(MemoPayInvoices.BadMerchantSignature.selector);
+        vm.prank(payer);
         invoices.pay(inv, malleated, a);
     }
 
@@ -169,8 +219,9 @@ contract MemoPayInvoicesTest is Test {
         MemoPayInvoices.Invoice memory inv = _invoice(address(usdc));
         bytes memory sig = _merchantSig(inv, merchantKey);
         vm.chainId(5042002); // signature made for this chain must not work on another
-        MemoPayInvoices.Authorization memory a = _auth(usdc, AMOUNT, bytes32(uint256(1)));
+        MemoPayInvoices.Authorization memory a = _authFor(usdc, inv, AMOUNT);
         vm.expectRevert(MemoPayInvoices.BadMerchantSignature.selector);
+        vm.prank(payer);
         invoices.pay(inv, sig, a);
     }
 
@@ -178,8 +229,9 @@ contract MemoPayInvoicesTest is Test {
         MemoPayInvoices.Invoice memory inv = _invoice(address(usdc));
         bytes memory sig = _merchantSig(inv, merchantKey);
         usdc.setBlocked(merchant, true);
-        MemoPayInvoices.Authorization memory a = _auth(usdc, AMOUNT, bytes32(uint256(1)));
+        MemoPayInvoices.Authorization memory a = _authFor(usdc, inv, AMOUNT);
         vm.expectRevert(bytes("blacklisted"));
+        vm.prank(payer);
         invoices.pay(inv, sig, a);
         assertEq(uint8(invoices.statusOf(merchant, ID)), uint8(MemoPayInvoices.Status.Open));
     }
@@ -194,8 +246,9 @@ contract MemoPayInvoicesTest is Test {
 
         MemoPayInvoices.Invoice memory inv = _invoice(address(usdc));
         bytes memory sig = _merchantSig(inv, merchantKey);
-        MemoPayInvoices.Authorization memory a = _auth(usdc, AMOUNT, bytes32(uint256(1)));
+        MemoPayInvoices.Authorization memory a = _authFor(usdc, inv, AMOUNT);
         vm.expectRevert(abi.encodeWithSelector(MemoPayInvoices.InvoiceNotOpen.selector, ID));
+        vm.prank(payer);
         invoices.pay(inv, sig, a);
     }
 
@@ -203,13 +256,19 @@ contract MemoPayInvoicesTest is Test {
         vm.prank(address(0xEE11));
         invoices.cancel(ID); // someone else "cancels" the same id under their own address
         MemoPayInvoices.Invoice memory inv = _invoice(address(usdc));
-        invoices.pay(inv, _merchantSig(inv, merchantKey), _auth(usdc, AMOUNT, bytes32(uint256(1))));
+        bytes memory mSig = _merchantSig(inv, merchantKey);
+        MemoPayInvoices.Authorization memory pAuth = _authFor(usdc, inv, AMOUNT);
+        vm.prank(payer);
+        invoices.pay(inv, mSig, pAuth);
         assertEq(usdc.balanceOf(merchant), AMOUNT);
     }
 
     function test_RevertWhen_CancellingPaidInvoice() public {
         MemoPayInvoices.Invoice memory inv = _invoice(address(usdc));
-        invoices.pay(inv, _merchantSig(inv, merchantKey), _auth(usdc, AMOUNT, bytes32(uint256(1))));
+        bytes memory mSig = _merchantSig(inv, merchantKey);
+        MemoPayInvoices.Authorization memory pAuth = _authFor(usdc, inv, AMOUNT);
+        vm.prank(payer);
+        invoices.pay(inv, mSig, pAuth);
         vm.prank(merchant);
         vm.expectRevert(abi.encodeWithSelector(MemoPayInvoices.InvoiceNotOpen.selector, ID));
         invoices.cancel(ID);

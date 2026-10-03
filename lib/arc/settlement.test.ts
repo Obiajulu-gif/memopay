@@ -70,6 +70,10 @@ describe('splitSig', () => {
   it('normalizes v from 0/1 to 27/28', () => {
     expect(splitSig(`0x${'11'.repeat(32)}${'22'.repeat(32)}01`).v).toBe(28);
   });
+
+  it('rejects anything but a 65-byte signature (e.g. EIP-2098 compact)', () => {
+    expect(() => splitSig(`0x${'11'.repeat(32)}${'22'.repeat(32)}`)).toThrow();
+  });
 });
 
 describe('settlement artifact', () => {

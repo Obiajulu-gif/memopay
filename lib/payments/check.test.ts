@@ -31,6 +31,10 @@ describe('checkTx', () => {
     const res = await checkTx(invoice, '0xaa', clientWith(async () => ({ ...good, from: FROM })));
     expect(res).toEqual({ status: 'paid' });
     expect(recordVerification).toHaveBeenCalledOnce();
+    // The payer is the authorization signer from the event, never the tx sender (a relayer could differ).
+    const call = recordVerification.mock.calls[0] as unknown[];
+    expect(call[4]).toBeUndefined();
+    expect((call[2] as { payer: string }).payer).toBe(FROM.toLowerCase());
   });
 
   it('ignores a transaction that did not pay this invoice', async () => {

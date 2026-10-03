@@ -2,7 +2,7 @@
 // Start a node first:  npx hardhat node --port 8546 --chain-id 5042002
 // Then from the repo root:  npx tsx contracts/scripts/e2e-local.mts
 import { readFileSync } from 'node:fs';
-import { createPublicClient, createWalletClient, http, keccak256, toBytes, toHex, type Abi, type Hex } from 'viem';
+import { createPublicClient, createWalletClient, hashTypedData, http, keccak256, toBytes, type Abi, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { invoiceTypedData, payCallData, receiveAuthTypedData, settlementAbi } from '../../lib/arc/settlement.ts';
 import { verifySettlement } from '../../lib/arc/verify.ts';
@@ -36,12 +36,20 @@ const merchantSig = await merchant.signTypedData(invoiceTypedData(contract, chai
 
 // Payer authorizes exactly as PayButton does (token name from the chain).
 const tokenName = (await pc.readContract({ address: usdc, abi: token.abi, functionName: 'name' })) as string;
-const nonce = toHex(crypto.getRandomValues(new Uint8Array(32)));
+const nonce = hashTypedData(invoiceTypedData(contract, chain.id, terms)); // invoice-bound, as PayButton does
 const validBefore = BigInt(Math.floor(Date.now() / 1000) + 3600);
 const authSig = await payer.signTypedData(receiveAuthTypedData({ token: usdc, tokenName, chainId: chain.id, from: payer.address, to: contract, value: 50_000n, validBefore, nonce }));
 
 // On Arc this calldata goes through Memo.memo(contract, data, …); locally we call the contract directly.
 const data = payCallData(terms, merchantSig, { from: payer.address, value: 50_000n, validAfter: 0n, validBefore, nonce, signature: authSig });
+// A front-runner replaying the payer's exact call must fail before the real payment lands (only the payer may submit).
+let frontRunReverted = false;
+try {
+  await pc.call({ to: contract, data, account: deployer.address });
+} catch {
+  frontRunReverted = true;
+}
+
 const hash = await wallet(payer).sendTransaction({ to: contract, data });
 const receipt = await pc.waitForTransactionReceipt({ hash });
 
@@ -57,7 +65,7 @@ try {
   secondReverted = true;
 }
 
-console.log(JSON.stringify({ receipt: receipt.status, verify: result, merchantBalance: merchantBal.toString(), status: Number(status), secondReverted }, (_, v) => (typeof v === 'bigint' ? v.toString() : v)));
-const ok = receipt.status === 'success' && result.ok && result.payer === payer.address.toLowerCase() && merchantBal === 50_000n && Number(status) === 1 && secondReverted;
+console.log(JSON.stringify({ receipt: receipt.status, verify: result, merchantBalance: merchantBal.toString(), status: Number(status), secondReverted, frontRunReverted }, (_, v) => (typeof v === 'bigint' ? v.toString() : v)));
+const ok = receipt.status === 'success' && result.ok && result.payer === payer.address.toLowerCase() && merchantBal === 50_000n && Number(status) === 1 && secondReverted && frontRunReverted;
 console.log(ok ? 'E2E PASS' : 'E2E FAIL');
 process.exit(ok ? 0 : 1);

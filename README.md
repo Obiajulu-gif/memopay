@@ -30,9 +30,11 @@ No reference fields to type, no matching bank lines to invoices by hand.
    - pulls the funds and forwards them to the merchant in the same transaction, then emits `InvoicePaid`.
 4. **Merchant can `cancel(id)`** an open invoice; the app's Void button does this before voiding.
 
-The contract has no owner, no admin functions, and never holds funds between transactions.
+The contract has no owner, no admin functions, and never holds funds between transactions. Tokens sent to it directly, outside `pay`, can't be recovered.
 
-Tests: 16 Solidity tests (Hardhat 3, forge-std) cover payment, double payment, wrong amount, tampered terms, redirected recipient, foreign signer, high-s signatures, cross-chain replay, unsupported tokens, failed transfers and cancellation. A shared test vector proves the app's viem signing hashes exactly like the contract, and [`contracts/scripts/e2e-local.mts`](contracts/scripts/e2e-local.mts) runs the app's signing and verification code against the compiled contract on a local chain.
+The payer's authorization nonce is the invoice's EIP-712 digest and only the payer may submit `pay`, so a copied authorization can't be redirected to another invoice and a copied transaction can't be front-run.
+
+Tests: 18 Solidity tests (Hardhat 3, forge-std) cover payment, double payment, wrong amount, tampered terms, redirected recipient, foreign signer, high-s signatures, cross-chain replay, unsupported tokens, failed transfers, cancellation, front-running by a third party and reuse of an authorization for another invoice. A shared test vector proves the app's viem signing hashes exactly like the contract, and [`contracts/scripts/e2e-local.mts`](contracts/scripts/e2e-local.mts) runs the app's signing and verification code against the compiled contract on a local chain.
 
 ```bash
 cd contracts

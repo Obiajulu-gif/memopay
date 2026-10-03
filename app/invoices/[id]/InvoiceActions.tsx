@@ -8,9 +8,9 @@ import { clientNetwork, connectWallet, walletError } from '@/lib/arc/browser';
 import { arcChain, type Hex } from '@/lib/arc/config';
 import { settlementAbi } from '@/lib/arc/settlement';
 
-type Props = { id: string; status: string; payUrl: string; settlement: string | null; memoId: string };
+type Props = { id: string; status: string; payUrl: string; settlement: string | null; memoId: string; merchant: string };
 
-export default function InvoiceActions({ id, status, payUrl, settlement, memoId }: Props) {
+export default function InvoiceActions({ id, status, payUrl, settlement, memoId, merchant }: Props) {
   const router = useRouter();
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error' | 'info'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -47,6 +47,8 @@ export default function InvoiceActions({ id, status, payUrl, settlement, memoId 
       try {
         const network = clientNetwork();
         const { wallet, address } = await connectWallet(network);
+        // cancel() is keyed by the sender, so it must come from the invoice's merchant wallet.
+        if (address.toLowerCase() !== merchant.toLowerCase()) throw new Error('Switch your wallet to the account that created this invoice');
         const pc = createPublicClient({ chain: arcChain(network), transport: custom(window.ethereum!) });
         const { maxFeePerGas: est } = await pc.estimateFeesPerGas();
         const tx = await wallet.writeContract({
@@ -59,14 +61,20 @@ export default function InvoiceActions({ id, status, payUrl, settlement, memoId 
           maxFeePerGas: est > 20_000_000_000n ? est : 20_000_000_000n, // Arc floor: 20 gwei
           maxPriorityFeePerGas: 1n,
         });
-        await pc.waitForTransactionReceipt({ hash: tx });
+        const receipt = await pc.waitForTransactionReceipt({ hash: tx });
+        if (receipt.status !== 'success') throw new Error('The cancel transaction reverted. The invoice is still open.');
       } catch (e) {
         setBusy(false);
         setMsg({ kind: 'error', text: walletError(e) });
         return;
       }
     }
-    const res = await fetch(`/api/invoices/${id}/void`, { method: 'POST' });
+    // The server reads the cancel from Arc; give its RPC a moment to catch up.
+    let res = await fetch(`/api/invoices/${id}/void`, { method: 'POST' });
+    for (let i = 0; settlement && res.status === 409 && i < 3; i++) {
+      await new Promise(r => setTimeout(r, 1500));
+      res = await fetch(`/api/invoices/${id}/void`, { method: 'POST' });
+    }
     setBusy(false);
     if (res.ok) router.refresh();
     else setMsg({ kind: 'error', text: (await res.json().catch(() => ({}))).error ?? 'Could not void' });

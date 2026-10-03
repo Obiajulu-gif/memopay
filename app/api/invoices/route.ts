@@ -43,9 +43,8 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Invalid draft' }, { status: 400 });
   }
   const built = buildInvoice(input, merchant, draft.id, draft.number, network);
-  if (!(await checkMerchantSig(settlement, chainId, built.terms, signature))) {
-    return Response.json({ error: 'Sign with the wallet you signed in with' }, { status: 400 });
-  }
+  const merchantSig = await checkMerchantSig(settlement, chainId, built.terms, signature);
+  if (!merchantSig) return Response.json({ error: 'Sign with the wallet you signed in with' }, { status: 400 });
 
   let created_block: bigint;
   try {
@@ -61,7 +60,7 @@ export async function POST(req: Request) {
       id: draft.id,
       memo_id: built.memoId,
       content_hash: built.contentHash,
-      merchant_sig: signature,
+      merchant_sig: merchantSig,
       settlement,
       created_block,
     });

@@ -21,8 +21,9 @@ interface IFiatToken {
 /// @title MemoPayInvoices
 /// @notice Settles MemoPay invoices on Arc with the terms enforced on-chain.
 /// The merchant signs the invoice terms off-chain (EIP-712, no gas). The payer signs an EIP-3009
-/// ReceiveWithAuthorization for exactly the invoice amount, then submits `pay` — normally wrapped in
-/// Arc's Memo contract so the invoice ID is also attached as a memo. This contract checks both
+/// ReceiveWithAuthorization for exactly the invoice amount whose nonce is the invoice digest, then submits
+/// `pay` themselves — normally wrapped in Arc's Memo contract, which keeps the payer as msg.sender and
+/// attaches the invoice ID as a memo. This contract checks both
 /// signatures, refuses paid or cancelled invoices, pulls the funds and forwards them to the merchant
 /// in the same transaction. It never holds funds between transactions.
 contract MemoPayInvoices {
@@ -73,6 +74,8 @@ contract MemoPayInvoices {
     error BadMerchantSignature();
     error AmountMismatch();
     error TransferFailed();
+    error NotPayer();
+    error AuthorizationNotForInvoice();
 
     constructor(address usdc_, address eurc_) {
         usdc = usdc_;
@@ -91,12 +94,16 @@ contract MemoPayInvoices {
         return keccak256(abi.encodePacked("\x19\x01", domainSeparator(), structHash));
     }
 
-    /// Pays `inv` with the payer's EIP-3009 authorization. Callable by anyone; the authorization
-    /// signature decides who pays.
+    /// Pays `inv` with the payer's EIP-3009 authorization. Only the payer may submit it, and the
+    /// authorization's nonce must be this invoice's digest, so a copied authorization can't be spent
+    /// on any other invoice and a copied call can't be front-run by someone else.
     function pay(Invoice calldata inv, bytes calldata merchantSig, Authorization calldata auth) external {
         if (inv.token != usdc && inv.token != eurc) revert UnsupportedToken(inv.token);
         if (statusOf[inv.merchant][inv.id] != Status.Open) revert InvoiceNotOpen(inv.id);
-        if (_recover(hashInvoice(inv), merchantSig) != inv.merchant) revert BadMerchantSignature();
+        if (msg.sender != auth.from) revert NotPayer();
+        bytes32 digest = hashInvoice(inv);
+        if (inv.merchant == address(0) || _recover(digest, merchantSig) != inv.merchant) revert BadMerchantSignature();
+        if (auth.nonce != digest) revert AuthorizationNotForInvoice();
         if (auth.value != inv.amount) revert AmountMismatch();
 
         statusOf[inv.merchant][inv.id] = Status.Paid; // effects before interactions

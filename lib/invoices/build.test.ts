@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseSignature, serializeSignature } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { buildInvoice, checkMerchantSig } from './build';
 import { invoiceTypedData } from '@/lib/arc/settlement';
@@ -31,7 +32,27 @@ describe('checkMerchantSig', () => {
     const merchant = acct.address.toLowerCase();
     const { terms } = buildInvoice(input, merchant, ID, 'INV-0001', 'testnet');
     const sig = await acct.signTypedData(invoiceTypedData(SETTLEMENT, 5042002, terms));
-    expect(await checkMerchantSig(SETTLEMENT, 5042002, terms, sig)).toBe(true);
+    expect(await checkMerchantSig(SETTLEMENT, 5042002, terms, sig)).toBe(sig);
+  });
+
+  it('normalizes v = 0/1 signatures to 27/28 so the contract accepts them', async () => {
+    const acct = privateKeyToAccount(generatePrivateKey());
+    const { terms } = buildInvoice(input, acct.address.toLowerCase(), ID, 'INV-0001', 'testnet');
+    const sig = await acct.signTypedData(invoiceTypedData(SETTLEMENT, 5042002, terms));
+    const { r, s, yParity } = parseSignature(sig);
+    const raw01 = `${r}${s.slice(2)}0${yParity}` as `0x${string}`; // v as 00/01, as some wallets return
+    expect(await checkMerchantSig(SETTLEMENT, 5042002, terms, raw01)).toBe(serializeSignature({ r, s, v: BigInt(27 + yParity) }));
+  });
+
+  it('rejects high-s signatures the contract would refuse', async () => {
+    const acct = privateKeyToAccount(generatePrivateKey());
+    const { terms } = buildInvoice(input, acct.address.toLowerCase(), ID, 'INV-0001', 'testnet');
+    const sig = await acct.signTypedData(invoiceTypedData(SETTLEMENT, 5042002, terms));
+    const { r, s, yParity } = parseSignature(sig);
+    const n = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+    const highS = `0x${(n - BigInt(s)).toString(16).padStart(64, '0')}` as `0x${string}`;
+    const malleated = serializeSignature({ r, s: highS, v: BigInt(27 + (1 - yParity)) });
+    expect(await checkMerchantSig(SETTLEMENT, 5042002, terms, malleated)).toBe(null);
   });
 
   it('rejects a signature over different terms or another chain', async () => {
@@ -39,8 +60,8 @@ describe('checkMerchantSig', () => {
     const merchant = acct.address.toLowerCase();
     const { terms } = buildInvoice(input, merchant, ID, 'INV-0001', 'testnet');
     const sig = await acct.signTypedData(invoiceTypedData(SETTLEMENT, 5042002, terms));
-    expect(await checkMerchantSig(SETTLEMENT, 5042002, { ...terms, amount: 1n }, sig)).toBe(false);
-    expect(await checkMerchantSig(SETTLEMENT, 5042, terms, sig)).toBe(false);
+    expect(await checkMerchantSig(SETTLEMENT, 5042002, { ...terms, amount: 1n }, sig)).toBe(null);
+    expect(await checkMerchantSig(SETTLEMENT, 5042, terms, sig)).toBe(null);
   });
 
   it('rejects a signature from another wallet and garbage', async () => {
@@ -48,7 +69,7 @@ describe('checkMerchantSig', () => {
     const other = privateKeyToAccount(generatePrivateKey());
     const { terms } = buildInvoice(input, acct.address.toLowerCase(), ID, 'INV-0001', 'testnet');
     const sig = await other.signTypedData(invoiceTypedData(SETTLEMENT, 5042002, terms));
-    expect(await checkMerchantSig(SETTLEMENT, 5042002, terms, sig)).toBe(false);
-    expect(await checkMerchantSig(SETTLEMENT, 5042002, terms, '0x1234')).toBe(false);
+    expect(await checkMerchantSig(SETTLEMENT, 5042002, terms, sig)).toBe(null);
+    expect(await checkMerchantSig(SETTLEMENT, 5042002, terms, '0x1234')).toBe(null);
   });
 });

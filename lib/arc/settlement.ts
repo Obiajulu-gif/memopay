@@ -17,6 +17,8 @@ export const settlementAbi = parseAbi([
   'error BadMerchantSignature()',
   'error AmountMismatch()',
   'error TransferFailed()',
+  'error NotPayer()',
+  'error AuthorizationNotForInvoice()',
 ]);
 
 export const STATUS = { Open: 0, Paid: 1, Cancelled: 2 } as const;
@@ -70,6 +72,7 @@ export function receiveAuthTypedData(p: {
 }
 
 export function splitSig(sig: Hex): { r: Hex; s: Hex; v: number } {
+  if (sig.length !== 132) throw new Error('Expected a 65-byte signature');
   const r = `0x${sig.slice(2, 66)}` as Hex;
   const s = `0x${sig.slice(66, 130)}` as Hex;
   let v = parseInt(sig.slice(130, 132), 16);
